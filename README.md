@@ -1,9 +1,37 @@
-# MacFanOptimizer
+<div align="center">
 
-[![CI](https://github.com/estevecastells/macfanoptimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/estevecastells/macfanoptimizer/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+<h1>MacFanOptimizer</h1>
 
-**An open-source, automatic alternative to Macs Fan Control for Apple Silicon MacBooks.**
+<p><strong>Free, open-source automatic fan control for Apple Silicon MacBooks.</strong><br/>
+A Macs Fan Control alternative: silent when your Mac is cool, full speed when it's hot.</p>
+
+<a href="https://github.com/estevecastells/macfanoptimizer/releases/latest/download/MacFanOptimizer-macos-arm64.zip"><img src="https://img.shields.io/badge/Download_for_Mac-Apple_Silicon-0A84FF?style=for-the-badge&logo=apple&logoColor=white" alt="Download MacFanOptimizer for Mac (Apple Silicon)" height="44"/></a>
+&nbsp;
+<a href="https://github.com/estevecastells/macfanoptimizer/releases/latest/download/macfanoptimizer-macos-arm64.tar.gz"><img src="https://img.shields.io/badge/Command_line-.tar.gz-24292F?style=for-the-badge&logo=gnubash&logoColor=white" alt="Download the command-line tools" height="44"/></a>
+
+<p>
+<a href="https://github.com/estevecastells/macfanoptimizer/releases/latest"><img src="https://img.shields.io/github/v/release/estevecastells/macfanoptimizer?label=latest&style=flat-square" alt="Latest release"/></a>
+<a href="https://github.com/estevecastells/macfanoptimizer/releases"><img src="https://img.shields.io/github/downloads/estevecastells/macfanoptimizer/total?style=flat-square" alt="Downloads"/></a>
+<img src="https://img.shields.io/badge/macOS-14%2B-555?style=flat-square&logo=apple" alt="macOS 14 or later"/>
+<a href="https://github.com/estevecastells/macfanoptimizer/actions/workflows/ci.yml"><img src="https://github.com/estevecastells/macfanoptimizer/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT license"/></a>
+</p>
+
+**Or install in one line** (no security prompt; verifies checksums):
+
+</div>
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/estevecastells/macfanoptimizer/main/scripts/get.sh | bash
+```
+
+<div align="center"><sub>
+Requires an Apple Silicon Mac on macOS 14+. After downloading, move the app to Applications, open it, and click <b>Install Fan Service…</b> in the menu bar.<br/>
+The app isn't notarized yet: on first launch, open <b>System Settings → Privacy &amp; Security</b> and click <b>Open Anyway</b>.
+Quit Macs Fan Control before installing. <a href="#install">More install options</a>.
+</sub></div>
+
+---
 
 MacFanOptimizer watches your chip's temperature and drives the fans for you. It keeps them silent when the Mac is cool, ramps them to full speed when it's working hard, and slows them down calmly afterwards. You don't have to pick a fixed speed or buy a license to get temperature-based control.
 
