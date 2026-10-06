@@ -18,7 +18,7 @@ Every PR must:
    - Protocol changes: update `fixtures/`, and both the Rust (`protocol.rs`) and Swift (`KitChecks`) sides.
    - Daemon socket behaviour: `crates/fand/tests/socket.rs`.
 3. **Keep the safety invariants.** Fans must be released to macOS on exit and on sensor failure, critical temperature must override Fixed mode, and unsupported models must stay read-only. If a PR weakens any of these, it won't be merged.
-4. **Not add dependencies lightly.** The daemon runs as root, so every dependency is attack surface. Justify each one in the PR description.
+4. **Not add dependencies lightly.** The daemon runs as root, so every dependency is attack surface. Justify each one in the PR description. GitHub Actions must be pinned to a full commit SHA, with the version in a comment (`uses: owner/action@<sha> # v4`); Dependabot keeps the pins up to date.
 5. **Be explained.** Say what changed, why, and how you tested it (paste `fanctl` output for hardware-facing changes).
 
 ## Adding support for your Mac
