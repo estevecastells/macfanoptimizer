@@ -1,0 +1,37 @@
+name: Support my Mac model
+description: Help validate MacFanOptimizer on another Mac
+labels: [model-support]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Build the CLI (`make build`) and paste the outputs below. These commands only **read** the SMC; they never change your fans.
+  - type: input
+    id: model
+    attributes:
+      label: Model identifier, chip, and macOS version
+      placeholder: Mac16,6 / M4 Max / 26.6
+    validations: { required: true }
+  - type: textarea
+    id: probe
+    attributes:
+      label: "`target/release/fanctl probe`"
+      render: text
+    validations: { required: true }
+  - type: textarea
+    id: fans
+    attributes:
+      label: "`target/release/fanctl keys F`"
+      render: text
+    validations: { required: true }
+  - type: textarea
+    id: sensors
+    attributes:
+      label: "`target/release/fanctl sensors` (idle, then under load if you can)"
+      render: text
+  - type: textarea
+    id: manual
+    attributes:
+      label: Optional — manual write test from docs/HARDWARE.md
+      description: Results of forcing a speed and releasing it (sudo required).
+      render: text

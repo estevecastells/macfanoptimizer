@@ -1,0 +1,69 @@
+name: CI
+
+# The merge bar: every job here must be green before a PR is reviewed.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  rust:
+    name: Rust (fmt, clippy, test)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - name: Simulator benchmark (sanity)
+        run: cargo run --locked --release -p fanctl -- benchmark
+
+  msrv:
+    name: Rust MSRV (1.87)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.87
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked --all-targets
+
+  swift:
+    name: Swift app (checks + bundle)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Protocol checks
+        working-directory: app
+        run: swift run -c debug KitChecks
+      - name: Build app bundle
+        run: scripts/build-app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MacFanOptimizer-app
+          path: build/MacFanOptimizer.app
+          retention-days: 14
+
+  scripts:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck scripts/*.sh

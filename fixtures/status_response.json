@@ -1,0 +1,62 @@
+{
+  "type": "status",
+  "status": {
+    "mode": {
+      "kind": "smart"
+    },
+    "profile": "balanced",
+    "decision": {
+      "kind": "duty",
+      "pct": 7.48
+    },
+    "reason": "normal",
+    "hotspot_key": "Tp0C",
+    "hotspot_c": 62.3,
+    "control_c": 61.5,
+    "duty_pct": 7.48,
+    "fans": [
+      {
+        "info": {
+          "index": 0,
+          "min_rpm": 2317.0,
+          "max_rpm": 7826.0
+        },
+        "reading": {
+          "actual_rpm": 5989.0,
+          "target_rpm": 6000.0,
+          "forced": true
+        },
+        "commanded_rpm": 2729.2
+      },
+      {
+        "info": {
+          "index": 1,
+          "min_rpm": 2317.0,
+          "max_rpm": 7826.0
+        },
+        "reading": null,
+        "commanded_rpm": null
+      }
+    ],
+    "groups": [
+      {
+        "group": "CPU P-cluster",
+        "max_c": 62.3,
+        "avg_c": 55.1,
+        "count": 23
+      }
+    ],
+    "control_sensor_count": 118,
+    "tick_us": 2100,
+    "ticks": 12,
+    "smc_writes": 2,
+    "last_error": null,
+    "external_override": false,
+    "conflicts": [
+      "Macs Fan Control"
+    ],
+    "uptime_s": 24.0,
+    "model": "Mac17,9",
+    "writes_enabled": true
+  }
+}

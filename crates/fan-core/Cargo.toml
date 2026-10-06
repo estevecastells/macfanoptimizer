@@ -1,0 +1,13 @@
+[package]
+name = "fan-core"
+description = "Hardware-independent fan control logic: curves, controller, sensor selection, protocol, simulator."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true

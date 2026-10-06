@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = ["crates/smc", "crates/fan-core", "crates/fand", "crates/fanctl"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.87"
+repository = "https://github.com/estevecastells/macfanoptimizer"
+homepage = "https://github.com/estevecastells/macfanoptimizer"
+
+[workspace.dependencies]
+smc = { path = "crates/smc" }
+fan-core = { path = "crates/fan-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+libc = "0.2"
+signal-hook = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+# Keep unwinding so the daemon's drop guard can hand fans back to the system on panic.
+panic = "unwind"

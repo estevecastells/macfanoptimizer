@@ -1,0 +1,16 @@
+[package]
+name = "fanctl"
+description = "Command-line client for MacFanOptimizer: status, control, diagnostics and simulation."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+smc.workspace = true
+fan-core.workspace = true
+fand = { path = "../fand" }
+serde_json.workspace = true
+libc.workspace = true
+clap = { version = "4", features = ["derive"] }

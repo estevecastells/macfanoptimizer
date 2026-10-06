@@ -1,0 +1,4 @@
+{"cmd":"status"}
+{"cmd":"set_mode","mode":{"kind":"fixed","rpm":3000}}
+{"cmd":"set_mode","mode":{"kind":"smart"}}
+{"cmd":"set_profile","profile":"quiet"}

@@ -1,0 +1,24 @@
+[package]
+name = "fand"
+description = "MacFanOptimizer daemon: runs as root, owns the SMC, serves clients over a Unix socket."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lib]
+name = "fand"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fand"
+path = "src/main.rs"
+
+[dependencies]
+smc.workspace = true
+fan-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+libc.workspace = true
+signal-hook.workspace = true
