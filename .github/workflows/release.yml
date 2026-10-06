@@ -1,0 +1,57 @@
+name: Release
+
+# Push a tag matching the Cargo version (e.g. v0.1.0) to build and publish
+# the downloadable app, CLI tarball and checksums. See docs/RELEASING.md.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Tag must match the Cargo version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          if [ "$TAG" != "v$version" ]; then
+            echo "Tag $TAG does not match Cargo version v$version" >&2
+            exit 1
+          fi
+
+      - name: Test
+        run: |
+          cargo test --locked
+          (cd app && swift run -c debug KitChecks)
+
+      - name: Package
+        run: scripts/package-release.sh
+
+      - name: Smoke-test the packaged CLI
+        run: |
+          mkdir -p /tmp/smoke
+          tar -xzf dist/macfanoptimizer-macos-arm64.tar.gz -C /tmp/smoke
+          /tmp/smoke/macfanoptimizer/fanctl --version
+          /tmp/smoke/macfanoptimizer/fanctl simulate sustained --duration 60 > /dev/null
+          /tmp/smoke/macfanoptimizer/fand --print-default-config > /dev/null
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            dist/MacFanOptimizer-macos-arm64.zip \
+            dist/macfanoptimizer-macos-arm64.tar.gz \
+            dist/SHA256SUMS \
+            --title "MacFanOptimizer $TAG" \
+            --notes-file dist/RELEASE_NOTES.md \
+            --generate-notes \
+            --verify-tag

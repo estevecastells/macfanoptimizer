@@ -4,7 +4,8 @@
 #   sudo scripts/install.sh [--bin-dir DIR] [--uid UID]
 #
 # --bin-dir  directory containing the `fand` and `fanctl` binaries
-#            (default: target/release next to this script's repo)
+#            (default: this script's directory if they are there, as in a
+#            release download; otherwise target/release of the checkout)
 # --uid      user allowed to change settings without sudo (default: $SUDO_UID)
 set -euo pipefail
 
@@ -17,7 +18,11 @@ LOG="/var/log/macfanoptimizer.log"
 CLI="/usr/local/bin/fanctl"
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-bin_dir="${here}/../target/release"
+if [[ -x "${here}/fand" ]]; then
+  bin_dir="$here"
+else
+  bin_dir="${here}/../target/release"
+fi
 allowed_uid="${SUDO_UID:-}"
 
 while [[ $# -gt 0 ]]; do
@@ -43,6 +48,8 @@ mkdir -p "$(dirname "$HELPER")" "$(dirname "$CLI")"
 launchctl bootout "system/${LABEL}" 2>/dev/null || true
 install -m 755 -o root -g wheel "${bin_dir}/fand" "$HELPER"
 install -m 755 -o root -g wheel "${bin_dir}/fanctl" "$CLI"
+# Binaries from a browser download carry a quarantine flag; launchd must not trip over it.
+xattr -d com.apple.quarantine "$HELPER" "$CLI" 2>/dev/null || true
 
 mkdir -p "$CONFIG_DIR"
 if [[ ! -f "$CONFIG" ]]; then
@@ -54,6 +61,8 @@ if [[ ! -f "$CONFIG" ]]; then
 else
   echo "==> Keeping existing config ${CONFIG}"
 fi
+# Keep an uninstaller on the system, so removal doesn't depend on the download/checkout.
+install -m 755 -o root -g wheel "${here}/uninstall.sh" "${CONFIG_DIR}/uninstall.sh"
 chown -R root:wheel "$CONFIG_DIR"
 chmod 755 "$CONFIG_DIR"
 chmod 644 "$CONFIG"
@@ -102,4 +111,5 @@ fi
 echo
 "$CLI" status || { echo "daemon did not start; see ${LOG}" >&2; exit 1; }
 echo
-echo "Installed. Logs: ${LOG}   Uninstall: sudo scripts/uninstall.sh"
+echo "Installed. Logs: ${LOG}"
+echo "Uninstall: sudo '${CONFIG_DIR}/uninstall.sh'"

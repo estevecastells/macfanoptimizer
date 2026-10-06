@@ -74,7 +74,34 @@ Requires macOS 14 or later.
 
 ## Install
 
-There are no signed releases yet, so build from source. You need [Rust](https://rustup.rs) and the Xcode Command Line Tools (`xcode-select --install`). Full Xcode is not required.
+Requires an Apple Silicon Mac on macOS 14 or later. **Quit Macs Fan Control first**, and remove it from your login items. Two fan controllers will fight over the fans; MacFanOptimizer detects that and warns you.
+
+### One-line install (recommended)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/estevecastells/macfanoptimizer/main/scripts/get.sh | bash
+```
+
+This downloads the [latest release](https://github.com/estevecastells/macfanoptimizer/releases/latest), verifies its SHA-256 checksums, installs the fan service (asking for your password once), and puts **MacFanOptimizer.app** in Applications. You can [read the script](scripts/get.sh) first.
+
+### Download the app
+
+1. Download `MacFanOptimizer-macos-arm64.zip` from the [latest release](https://github.com/estevecastells/macfanoptimizer/releases/latest), unzip it, and move **MacFanOptimizer.app** to Applications.
+2. Open it. The app isn't notarized by Apple yet, so the first time macOS says it can't verify it. Go to **System Settings → Privacy & Security** and click **Open Anyway**.
+3. Click the fan icon in the menu bar, then **Install Fan Service…**.
+
+### Command line only
+
+Download `macfanoptimizer-macos-arm64.tar.gz` from the [latest release](https://github.com/estevecastells/macfanoptimizer/releases/latest), then:
+
+```sh
+tar -xzf macfanoptimizer-macos-arm64.tar.gz
+sudo ./macfanoptimizer/install.sh
+```
+
+### From source
+
+You need [Rust](https://rustup.rs) and the Xcode Command Line Tools (`xcode-select --install`). Full Xcode is not required.
 
 ```sh
 git clone https://github.com/estevecastells/macfanoptimizer
@@ -83,9 +110,14 @@ make install        # builds, installs the daemon (asks for your password), prin
 make run-app        # builds and opens the menu bar app
 ```
 
-**Quit Macs Fan Control first**, and remove it from your login items. Two fan controllers will fight over the fans. MacFanOptimizer detects it and warns you.
+### Uninstall
 
-Uninstall with `make uninstall`, which returns the fans to macOS. Add `--purge` to `scripts/uninstall.sh` to delete the config and logs too.
+```sh
+sudo "/Library/Application Support/MacFanOptimizer/uninstall.sh"          # fans go back to macOS
+sudo "/Library/Application Support/MacFanOptimizer/uninstall.sh" --purge  # also delete config and logs
+```
+
+Then delete MacFanOptimizer.app.
 
 ## Command line
 
