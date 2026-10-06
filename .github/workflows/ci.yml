@@ -55,9 +55,11 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - name: Protocol checks
+      - name: Build all Swift targets and run protocol checks
         working-directory: app
-        run: swift run -c debug KitChecks
+        run: |
+          swift build -c debug
+          swift run -c debug KitChecks
       - name: Build app bundle
         run: scripts/build-app.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

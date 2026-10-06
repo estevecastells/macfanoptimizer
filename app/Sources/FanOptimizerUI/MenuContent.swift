@@ -1,10 +1,14 @@
 import FanOptimizerKit
 import SwiftUI
 
-struct MenuContent: View {
+public struct MenuContent: View {
     let model: AppModel
 
-    var body: some View {
+    public init(model: AppModel) {
+        self.model = model
+    }
+
+    public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             switch model.connection {
             case .connected:
@@ -24,6 +28,17 @@ struct MenuContent: View {
             }
 
             Divider()
+            HStack {
+                Toggle("Open at login", isOn: Binding(get: { model.openAtLogin }, set: { model.setOpenAtLogin($0) }))
+                    .toggleStyle(.checkbox)
+                    .font(.callout)
+                if model.loginItemNeedsApproval {
+                    Button("Approve…") { model.openLoginItemSettings() }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                        .help("macOS needs you to allow MacFanOptimizer in Login Items")
+                }
+            }
             HStack {
                 Button("Log") { model.openLog() }
                 Spacer()
@@ -64,13 +79,39 @@ private struct StatusView: View {
                 .monospacedDigit()
                 .foregroundStyle(temperatureColor(status.controlC))
             VStack(alignment: .leading, spacing: 2) {
-                Text(status.reason.explanation).font(.callout)
-                if let key = status.hotspotKey {
-                    Text("Hottest sensor \(key) at \(Format.celsius(status.hotspotC))")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+                Text(headline).font(.callout)
+                Text(subline).font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// What the controller is doing, in plain words.
+    private var headline: String {
+        switch status.reason {
+        case .normal:
+            switch status.mode {
+            case .smart: return "Smart · fans at \(fanSpeedPercent)% speed"
+            case let .fixed(rpm): return "Fixed at \(Format.rpm(rpm)) rpm"
+            case .max: return "Max · full speed"
+            case .system: return "macOS controls the fans"
+            }
+        default:
+            return status.reason.explanation
+        }
+    }
+
+    /// Fastest fan as a share of its maximum speed, matching the speed bars.
+    private var fanSpeedPercent: Int {
+        Int(((status.fans.map(\.fraction).max() ?? 0) * 100).rounded())
+    }
+
+    /// Chip temperature context. The big number is smoothed; mention the
+    /// instantaneous peak only when it's higher, so the two never look contradictory.
+    private var subline: String {
+        if let peak = status.hotspotC, let control = status.controlC, peak >= control + 1 {
+            return "Chip temperature · peaking at \(Format.celsius(peak))"
+        }
+        return "Chip temperature"
     }
 
     @ViewBuilder private var warnings: some View {
@@ -148,7 +189,7 @@ private struct FanRow: View {
                 }
             }
             .font(.callout)
-            ProgressView(value: fan.fraction).tint(fan.fraction > 0.9 ? .orange : .accentColor)
+            SpeedBar(fraction: fan.fraction)
         }
     }
 }
@@ -246,6 +287,27 @@ private struct SetupView: View {
             .keyboardShortcut(.defaultAction)
             Text("Or from a checkout: make install").font(.caption).foregroundStyle(.secondary)
         }
+    }
+}
+
+/// Fan speed bar. Drawn in SwiftUI rather than with ProgressView, whose AppKit
+/// control turns grey whenever the menu window isn't key.
+private struct SpeedBar: View {
+    let fraction: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.quaternary)
+                Capsule()
+                    .fill(fraction > 0.9 ? Color.orange.gradient : Color.blue.gradient)
+                    .frame(width: max(geo.size.width * fraction, fraction > 0 ? 6 : 0))
+            }
+        }
+        .frame(height: 6)
+        .animation(.easeOut(duration: 0.4), value: fraction)
+        .accessibilityLabel("Fan speed")
+        .accessibilityValue("\(Int((fraction * 100).rounded())) percent of maximum")
     }
 }
 

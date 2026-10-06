@@ -70,6 +70,9 @@ enum Cmd {
         profile: ProfileArg,
         #[arg(long, default_value_t = 600.0)]
         duration: f64,
+        /// RPM for `--mode fixed`.
+        #[arg(long, default_value_t = 6000.0)]
+        rpm: f64,
         /// Print every sample as CSV instead of a summary table.
         #[arg(long)]
         csv: bool,
@@ -126,6 +129,7 @@ enum ScenarioArg {
     Bursty,
     Ramp,
     Extreme,
+    Session,
 }
 
 impl From<ScenarioArg> for Scenario {
@@ -136,6 +140,7 @@ impl From<ScenarioArg> for Scenario {
             ScenarioArg::Bursty => Scenario::Bursty,
             ScenarioArg::Ramp => Scenario::Ramp,
             ScenarioArg::Extreme => Scenario::Extreme,
+            ScenarioArg::Session => Scenario::Session,
         }
     }
 }
@@ -206,14 +211,14 @@ fn run(cli: &Cli) -> Result<(), String> {
         Cmd::Report => report(cli)?,
         Cmd::Keys { prefix } => keys(prefix.as_deref())?,
         Cmd::Fan { action } => fan(action)?,
-        Cmd::Simulate { scenario, mode, profile, duration, csv } => {
-            let cfg = Config { mode: mode_from(*mode, Some(3500.0))?, profile: (*profile).into(), ..Config::default() };
+        Cmd::Simulate { scenario, mode, profile, duration, csv, rpm } => {
+            let cfg = Config { mode: mode_from(*mode, Some(*rpm))?, profile: (*profile).into(), ..Config::default() };
             let (samples, sum) = sim::run(&cfg, (*scenario).into(), *duration);
             if *csv {
                 println!("t,power_w,die_c,control_c,fan_rpm,decision,reason");
                 for s in samples {
                     println!(
-                        "{:.1},{:.1},{:.2},{:.2},{:.0},{:?},{:?}",
+                        "{:.1},{:.1},{:.2},{:.2},{:.0},\"{:?}\",{:?}",
                         s.t,
                         s.power_w,
                         s.die_c,

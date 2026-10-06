@@ -2,8 +2,9 @@ import AppKit
 import FanOptimizerKit
 import Foundation
 import Observation
+import ServiceManagement
 
-enum Connection: Equatable {
+public enum Connection: Equatable {
     case connecting
     case connected
     /// Daemon not installed or not running.
@@ -13,11 +14,14 @@ enum Connection: Equatable {
 
 @MainActor
 @Observable
-final class AppModel {
-    private(set) var status: Status?
-    private(set) var connection: Connection = .connecting
+public final class AppModel {
+    public private(set) var status: Status?
+    public private(set) var connection: Connection = .connecting
     private(set) var actionError: String?
     private(set) var installing = false
+    /// Mirrors the login item state; set through `setOpenAtLogin`.
+    private(set) var openAtLogin = false
+    private(set) var loginItemNeedsApproval = false
 
     private let client = DaemonClient()
     private var pollTask: Task<Void, Never>?
@@ -25,11 +29,58 @@ final class AppModel {
     /// Polling period. A status call is a single local socket round-trip.
     static let pollInterval: Duration = .seconds(2)
 
-    init() {
+    public init() {
+        configureLoginItemOnFirstLaunch()
         start()
     }
 
-    func start() {
+    /// A static model for previews and README screenshots: no daemon, no polling.
+    public init(previewStatus: Status) {
+        status = previewStatus
+        connection = .connected
+        openAtLogin = true
+    }
+
+    // MARK: Open at login
+
+    private static let loginItemConfiguredKey = "loginItemConfigured"
+
+    /// Open at login by default the first time the app runs; after that the
+    /// user's choice (from the menu or System Settings) wins.
+    private func configureLoginItemOnFirstLaunch() {
+        let defaults = UserDefaults.standard
+        if !defaults.bool(forKey: Self.loginItemConfiguredKey) {
+            defaults.set(true, forKey: Self.loginItemConfiguredKey)
+            setOpenAtLogin(true)
+        }
+        refreshLoginItem()
+    }
+
+    func refreshLoginItem() {
+        let state = SMAppService.mainApp.status
+        openAtLogin = state == .enabled || state == .requiresApproval
+        loginItemNeedsApproval = state == .requiresApproval
+    }
+
+    func setOpenAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            actionError = nil
+        } catch {
+            actionError = "Couldn't change the login item: \(error.localizedDescription)"
+        }
+        refreshLoginItem()
+    }
+
+    func openLoginItemSettings() {
+        SMAppService.openSystemSettingsLoginItems()
+    }
+
+    public func start() {
         pollTask?.cancel()
         pollTask = Task { [weak self] in
             while !Task.isCancelled {

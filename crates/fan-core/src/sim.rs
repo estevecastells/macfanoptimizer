@@ -23,11 +23,13 @@ pub enum Scenario {
     Ramp,
     /// Heavy CPU+GPU load beyond what the cooling can fully handle.
     Extreme,
+    /// A work session: 2 min idle, 8 min of heavy work, then idle again.
+    Session,
 }
 
 impl Scenario {
-    pub const ALL: [Scenario; 5] =
-        [Scenario::Idle, Scenario::Sustained, Scenario::Bursty, Scenario::Ramp, Scenario::Extreme];
+    pub const ALL: [Scenario; 6] =
+        [Scenario::Idle, Scenario::Sustained, Scenario::Bursty, Scenario::Ramp, Scenario::Extreme, Scenario::Session];
 
     pub fn parse(s: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|x| x.name() == s)
@@ -40,6 +42,7 @@ impl Scenario {
             Scenario::Bursty => "bursty",
             Scenario::Ramp => "ramp",
             Scenario::Extreme => "extreme",
+            Scenario::Session => "session",
         }
     }
 
@@ -57,6 +60,13 @@ impl Scenario {
             }
             Scenario::Ramp => 6.0 + 84.0 * (t / total).clamp(0.0, 1.0),
             Scenario::Extreme => 110.0,
+            Scenario::Session => {
+                if (120.0..600.0).contains(&t) {
+                    75.0
+                } else {
+                    6.0
+                }
+            }
         }
     }
 }
@@ -363,6 +373,15 @@ mod tests {
         let (_, apple) = run(&system(), Scenario::Sustained, 900.0);
         assert!(ours.max_die_c + 5.0 < apple.max_die_c, "ours {} vs macOS {}", ours.max_die_c, apple.max_die_c);
         assert!(ours.max_fan_rpm > 7826.0 * 0.98, "sustained heavy load must reach max fans");
+    }
+
+    #[test]
+    fn session_goes_quiet_again_after_work() {
+        let (samples, _) = run(&smart(Profile::Balanced), Scenario::Session, 1200.0);
+        let during = samples.iter().find(|s| s.t == 540.0).unwrap();
+        assert!(during.fan_rpm > 7000.0, "fans near max during heavy work, got {}", during.fan_rpm);
+        let after = samples.last().unwrap();
+        assert_eq!(after.decision, Decision::System, "back to macOS (silent) after the work ends");
     }
 
     #[test]

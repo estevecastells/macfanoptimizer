@@ -31,6 +31,13 @@ The app isn't notarized yet: on first launch, open <b>System Settings → Privac
 Quit Macs Fan Control before installing. <a href="#install">More install options</a>.
 </sub></div>
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/panel-dark.png">
+    <img src="docs/images/panel-light.png" width="320" alt="MacFanOptimizer menu bar panel: chip temperature 59°, Smart mode with both fans at 47% speed, profile picker, and per-cluster temperatures">
+  </picture>
+</p>
+
 ---
 
 MacFanOptimizer watches your chip's temperature and drives the fans for you. It keeps them silent when the Mac is cool, ramps them to full speed when it's working hard, and slows them down calmly afterwards. You don't have to pick a fixed speed or buy a license to get temperature-based control.
@@ -82,13 +89,18 @@ Safety: a hot chip always wins over a fixed speed, sensor failures hand control 
 
 ### Simulated comparison
 
-From `make benchmark`: 20 minutes in the built-in thermal model, which is calibrated against an M5 Pro MacBook Pro. "macOS default" is an *emulation* of Apple's late-ramping policy, not a measurement.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-session-dark.svg">
+  <img src="docs/images/chart-session-light.svg" width="760" alt="Chart of a 15-minute work session. During 8 minutes of heavy work, MacFanOptimizer keeps the chip at 85 °C with the fans at full speed, against 96 °C for the macOS default and 94 °C for a fixed 6000 rpm. When the work stops, MacFanOptimizer and macOS turn the fans off, while the fixed setting keeps them at 6000 rpm.">
+</picture>
 
-| Sustained heavy load | max °C | time above 90 °C | avg rpm |
+A work session in the built-in thermal model, which is calibrated against an M5 Pro MacBook Pro: 2 minutes idle, 8 minutes of heavy work, then idle. "macOS default" is an *emulation* of Apple's late-ramping policy, not a measurement. "Fixed 6000 rpm" is our Fixed mode, comparable to a constant speed in Macs Fan Control's free version, except that ours raises the fans when the chip nears 95 °C. Regenerate with `python3 docs/images/make_chart.py`.
+
+| Policy | Chip during work | Fans during work | Fans when idle |
 |---|---|---|---|
-| macOS default (emulated) | 95.9 | 1172 s | 6147 |
-| Fixed 6000 rpm | 95.0 | 1130 s | 6396 |
-| **Smart / Balanced** | **85.4** | **0 s** | 7627 |
+| **MacFanOptimizer (Smart, Balanced)** | **85 °C** | 7,826 rpm (max) | **off** |
+| macOS default (emulated) | 96 °C | 6,322 rpm | off |
+| Fixed 6000 rpm (our Fixed mode) | 94 °C | 6,512 rpm (raised by the safety floor) | 6,000 rpm |
 
 ## Supported hardware
 
@@ -129,6 +141,8 @@ This downloads the [latest release](https://github.com/estevecastells/macfanopti
 1. Download `MacFanOptimizer-macos-arm64.zip` from the [latest release](https://github.com/estevecastells/macfanoptimizer/releases/latest), unzip it, and move **MacFanOptimizer.app** to Applications.
 2. Open it. The app isn't notarized by Apple yet, so the first time macOS says it can't verify it. Go to **System Settings → Privacy & Security** and click **Open Anyway**.
 3. Click the fan icon in the menu bar, then **Install Fan Service…**.
+
+The app opens at login automatically. Untick **Open at login** in its menu to stop that. The fan service itself always runs in the background, with or without the app.
 
 ### Command line only
 
