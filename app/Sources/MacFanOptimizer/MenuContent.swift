@@ -78,13 +78,45 @@ private struct StatusView: View {
             Label("Quit \(status.conflicts.joined(separator: ", ")) — it fights over the fans.", systemImage: "exclamationmark.triangle.fill")
                 .font(.caption).foregroundStyle(.orange)
         }
-        if !status.writesEnabled {
-            Label("Read-only: \(status.model) isn't a validated model.", systemImage: "lock")
-                .font(.caption).foregroundStyle(.orange)
+        if let why = status.controlDisabled {
+            VStack(alignment: .leading, spacing: 4) {
+                Label(why, systemImage: "xmark.octagon").font(.caption).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                reportLink("Report this Mac so it can be supported")
+            }
+        } else if status.support == .monitorOnly || !status.writesEnabled {
+            VStack(alignment: .leading, spacing: 4) {
+                Label(status.supportNote.isEmpty ? "Read-only on this Mac." : status.supportNote, systemImage: "lock")
+                    .font(.caption).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                if status.support == .monitorOnly { reportLink("Report this Mac") }
+            }
+        } else if status.support == .compatible {
+            VStack(alignment: .leading, spacing: 4) {
+                Label(compatibleNote, systemImage: allFansVerified ? "checkmark.seal" : "hourglass")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if allFansVerified { reportLink("Help validate \(status.model): send a report") }
+            }
         }
         if let err = status.lastError {
             Label(err, systemImage: "xmark.octagon").font(.caption).foregroundStyle(.red)
         }
+    }
+
+    private var allFansVerified: Bool {
+        !status.fans.isEmpty && status.fans.allSatisfy { $0.verified == true }
+    }
+
+    private var compatibleNote: String {
+        allFansVerified
+            ? "\(status.model) isn't validated yet, but the fans responded to control."
+            : "\(status.model) isn't validated yet — checking that the fans respond…"
+    }
+
+    private func reportLink(_ title: String) -> some View {
+        Link(title, destination: URL(string: "https://github.com/estevecastells/macfanoptimizer/issues/new?template=model_support.yml")!)
+            .font(.caption)
     }
 
     private var sensors: some View {

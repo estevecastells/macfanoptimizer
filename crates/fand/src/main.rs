@@ -102,28 +102,38 @@ fn main() {
 
     let cfg = load_config(&args.config);
     let model = fand::hardware_model();
-    let supported = fand::is_supported_model(&model);
-    if !supported && !cfg.allow_unsupported_model {
-        log!(
-            "{model} is not a validated model (supported: {:?}); running READ-ONLY. \
-             Set allow_unsupported_model = true in the config to control fans anyway.",
-            fand::SUPPORTED_MODELS
-        );
+    let chip = fand::chip_name();
+    // Open read-only, assess what this Mac exposes, then decide whether to write.
+    let mut hw = SmcHardware::open(false).unwrap_or_else(|e| die(&format!("SMC: {e}")));
+    let control_sensors = fan_core::sensors::select_control_keys(hw.temperature_keys(), &cfg.sensors).len();
+    let machine = fand::assess(&model, &chip, &hw, control_sensors);
+    use fan_core::protocol::SupportLevel;
+    let writes_enabled = !args.dry_run
+        && match machine.support {
+            SupportLevel::Validated => true,
+            SupportLevel::Compatible => cfg.control_unvalidated_models,
+            SupportLevel::MonitorOnly => false,
+        };
+    hw.set_write_enabled(writes_enabled);
+    for issue in hw.issues() {
+        log!("discovery: {issue}");
     }
-    let writes_enabled = !args.dry_run && (supported || cfg.allow_unsupported_model);
-    let hw = SmcHardware::open(writes_enabled).unwrap_or_else(|e| die(&format!("SMC: {e}")));
     log!(
-        "fand {} starting on {model}: {} fan(s) {:?}, {} temperature sensors, unlock key: {}, writes: {}",
+        "fand {} starting on {model} ({chip}, macOS {}): {} fan(s) {:?}, {} temperature sensors, unlock key: {}",
         env!("CARGO_PKG_VERSION"),
+        fand::os_version(),
         hw.fans().len(),
         hw.fans().iter().map(|f| (f.min_rpm, f.max_rpm)).collect::<Vec<_>>(),
         hw.temperature_keys().len(),
         hw.has_unlock_key(),
-        writes_enabled
     );
+    log!("support: {:?}: {} Writes enabled: {writes_enabled}.", machine.support, machine.note);
+    if machine.support == SupportLevel::Compatible && !cfg.control_unvalidated_models {
+        log!("control_unvalidated_models = false in the config: running read-only.");
+    }
 
     let mut engine = Engine::new(hw, cfg).unwrap_or_else(|e| die(&format!("config: {e}")));
-    engine.set_machine(model, writes_enabled);
+    engine.set_machine(machine, writes_enabled);
     log!("control sensors ({}): {:?}", engine.control_keys().len(), engine.control_keys());
 
     if args.once {
@@ -151,6 +161,7 @@ fn main() {
 
     let mut last_logged: Option<(Decision, Reason)> = None;
     let mut ticks: u64 = 0;
+    let mut disabled_logged = false;
     while !term.load(Ordering::Relaxed) {
         let poll = {
             let mut engine = shared.engine();
@@ -173,6 +184,10 @@ fn main() {
                     status.last_error.as_ref().map(|e| format!(" error: {e}")).unwrap_or_default(),
                 );
                 last_logged = Some(now);
+            }
+            if status.control_disabled.is_some() && !disabled_logged {
+                log!("CONTROL DISABLED: {}", status.control_disabled.as_deref().unwrap_or_default());
+                disabled_logged = true;
             }
             if !status.conflicts.is_empty() && ticks.is_multiple_of(150) {
                 log!("warning: {:?} running; it will fight fand over the fans", status.conflicts);

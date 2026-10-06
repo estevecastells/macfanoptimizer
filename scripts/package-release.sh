@@ -41,7 +41,7 @@ curl -fsSL https://raw.githubusercontent.com/${repo}/main/scripts/get.sh | bash
 
 **Command line only.** Download \`macfanoptimizer-macos-arm64.tar.gz\`, extract it, and run \`sudo ./macfanoptimizer/install.sh\`.
 
-Requires an Apple Silicon Mac on macOS 14 or later. Fan control is validated on \`Mac17,9\` (M5 Pro). Other models run read-only until they're validated; see [docs/HARDWARE.md](https://github.com/${repo}/blob/v${version}/docs/HARDWARE.md). Quit Macs Fan Control or any other fan app first.
+Requires an Apple Silicon Mac on macOS 14 or later. Validated on \`Mac17,9\` (M5 Pro); other Apple Silicon Macs with fans are supported with runtime verification, and fanless Macs run in monitoring mode. See [Supported hardware](https://github.com/${repo}#supported-hardware). Quit Macs Fan Control or any other fan app first. Tried it on a new model? Run \`fanctl report\` and [open a model support issue](https://github.com/${repo}/issues/new?template=model_support.yml).
 
 EOF
 

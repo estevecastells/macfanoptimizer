@@ -23,11 +23,12 @@ Every PR must:
 
 ## Adding support for your Mac
 
-This is the most valuable contribution. Use the [model support issue template](https://github.com/estevecastells/macfanoptimizer/issues/new?template=model_support.yml), or send a PR that:
+This is the most valuable contribution. Any Apple Silicon Mac with fans already runs as "compatible", with runtime verification. To make it "validated":
 
-1. Adds your model identifier to `SUPPORTED_MODELS` in `crates/fand/src/lib.rs`.
-2. Includes the output of `fanctl probe` and `fanctl keys F` in the PR description.
-3. Confirms the manual test from [docs/HARDWARE.md](docs/HARDWARE.md#validating-a-new-model): forcing a speed, releasing back to macOS, and smart mode under load.
+1. Run `fanctl report | pbcopy` and file a [hardware report](https://github.com/estevecastells/macfanoptimizer/issues/new?template=model_support.yml). That's often enough.
+2. Or send a PR that adds your model to `VALIDATED_MODELS` in `crates/fand/src/lib.rs`, with the report in the description and the results of the manual checks in [docs/HARDWARE.md](docs/HARDWARE.md#validating-a-new-model).
+
+If your Mac shows "monitoring only" because its sensors aren't recognized, the report's sensor groups tell us which key prefixes to add to `SensorConfig::families`.
 
 ## Development setup
 

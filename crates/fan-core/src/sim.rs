@@ -81,6 +81,10 @@ pub struct SimHardware {
     pub fail_reads: bool,
     pub writes: u64,
     pub reads: u64,
+    /// The SMC accepts writes but the fans don't physically follow.
+    pub ignore_writes: bool,
+    /// The OS takes forced mode back every second (failed `Ftst` unlock).
+    pub reclaim_forced: bool,
 }
 
 impl Default for SimHardware {
@@ -104,6 +108,8 @@ impl SimHardware {
             fail_reads: false,
             writes: 0,
             reads: 0,
+            ignore_writes: false,
+            reclaim_forced: false,
         }
     }
 
@@ -142,8 +148,12 @@ impl SimHardware {
     pub fn advance(&mut self, dt: f64, power_w: f64) {
         let throttle = if self.die_c > THROTTLE_C { (1.0 - (self.die_c - THROTTLE_C) / 10.0).max(0.3) } else { 1.0 };
         self.power_w = power_w * throttle;
+        if self.reclaim_forced {
+            self.system_reset();
+        }
         for i in 0..self.fans.len() {
-            let goal = if self.forced[i] { self.target[i] } else { self.system_target(&self.fans[i]) };
+            let goal =
+                if self.forced[i] && !self.ignore_writes { self.target[i] } else { self.system_target(&self.fans[i]) };
             self.actual[i] += (goal - self.actual[i]) * (1.0 - (-dt / FAN_TAU_S).exp());
         }
         let n = self.fans.len() as f64;

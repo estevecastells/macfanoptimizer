@@ -45,6 +45,8 @@ pub enum Reason {
     SensorFailure,
     /// A sensor read failed; holding the previous decision.
     SensorGlitch,
+    /// Fans didn't respond to control on this machine; macOS is in charge.
+    ControlDisabled,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -62,7 +62,7 @@ Every 2 seconds the daemon:
 4. Writes the SMC only when the target moves by at least 50 rpm. If macOS (after sleep) or another app takes the fans back, it re-asserts its target.
 5. When the curve reaches 0 %, it **hands the fans back to macOS**, so they can stop completely at idle.
 
-Safety: a hot chip always wins over a fixed speed, sensor failures hand control back to macOS, and the fans are released on exit, crash or uninstall.
+Safety: a hot chip always wins over a fixed speed, sensor failures hand control back to macOS, fans that don't obey within 30 s are handed back too, and the fans are released on exit, crash or uninstall.
 
 ### Modes and profiles
 
@@ -92,11 +92,23 @@ From `make benchmark`: 20 minutes in the built-in thermal model, which is calibr
 
 ## Supported hardware
 
-| Model | Chip | Status |
-|---|---|---|
-| `Mac17,9` | M5 Pro MacBook Pro | ✅ reference development machine |
+MacFanOptimizer works out what to do from what your Mac's SMC exposes, not from a list of model names. So it can run on Macs nobody has tested yet, safely.
 
-On any other model the daemon runs **read-only**: it shows temperatures and what it *would* do, but never writes to the fans. Run `fanctl probe` to see your model. If you want your Mac supported, open a [model support issue](https://github.com/estevecastells/macfanoptimizer/issues/new?template=model_support.yml). Adding a model is usually a one-line change plus a test report. See [docs/HARDWARE.md](docs/HARDWARE.md).
+| Mac | Status |
+|---|---|
+| MacBook Pro, M5 Pro (`Mac17,9`) | ✅ **Validated**: tested end to end |
+| Other Apple Silicon Macs with fans: MacBook Pro (M1–M5), Mac mini, Mac Studio, iMac, Mac Pro | 🟡 **Compatible**: fan control on, verified at runtime |
+| MacBook Air (fanless) | 👀 **Monitoring only**: temperatures, nothing to control |
+| Intel Macs | ❌ Not supported |
+
+**How untested Macs stay safe:**
+
+- The daemon only takes control if it finds the standard fan keys and at least 4 recognizable chip temperature sensors. Otherwise it's read-only and tells you why.
+- After its first write, it checks that the fans actually obey. They must hold the requested speed within 30 seconds. If they don't, it hands the fans back to macOS, stops controlling them, and shows why in the menu bar.
+- The usual safety rules still apply: fans are released on exit, crash or sensor failure, and a hot chip always overrides fixed speeds.
+- Prefer to keep an unvalidated Mac read-only? Set `control_unvalidated_models = false` in the config.
+
+**Help validate your Mac.** If it works for you (or doesn't), run `fanctl report | pbcopy` and paste it into a [model support issue](https://github.com/estevecastells/macfanoptimizer/issues/new?template=model_support.yml). It's read-only and takes a few seconds. Each report moves a model from 🟡 to ✅. See [docs/HARDWARE.md](docs/HARDWARE.md) for what we know per chip generation.
 
 Requires macOS 14 or later.
 
@@ -157,6 +169,7 @@ fanctl profile quiet          # quiet | balanced | performance | custom
 fanctl config                 # print the active config
 fanctl sensors [--all]        # every temperature sensor (no daemon needed)
 fanctl probe                  # what the controller sees on this Mac (no daemon needed)
+fanctl report                 # hardware report to paste into a GitHub issue
 fanctl simulate bursty        # run the controller against the thermal model
 fanctl benchmark              # compare policies across scenarios
 ```

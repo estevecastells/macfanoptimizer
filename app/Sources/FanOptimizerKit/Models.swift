@@ -73,6 +73,7 @@ public enum Reason: String, Decodable, Sendable {
     case normal, idle, critical, protecting
     case sensorFailure = "sensor_failure"
     case sensorGlitch = "sensor_glitch"
+    case controlDisabled = "control_disabled"
 
     public init(from decoder: Decoder) throws {
         // Unknown future reasons degrade gracefully instead of failing the whole status.
@@ -88,6 +89,7 @@ public enum Reason: String, Decodable, Sendable {
         case .protecting: "Hot — fans raised above the fixed speed"
         case .sensorFailure: "Sensors unavailable — macOS is in charge"
         case .sensorGlitch: "Sensor read failed — holding last speed"
+        case .controlDisabled: "Fans didn't respond — macOS is in charge"
         }
     }
 }
@@ -108,6 +110,8 @@ public struct FanStatus: Decodable, Equatable, Sendable, Identifiable {
     public let info: FanInfo
     public let reading: FanReading?
     public let commandedRpm: Double?
+    /// Runtime check that the fan obeys control: nil until tested.
+    public let verified: Bool?
 
     public var id: Int { info.index }
 
@@ -115,6 +119,17 @@ public struct FanStatus: Decodable, Equatable, Sendable, Identifiable {
     public var fraction: Double {
         guard let r = reading, info.maxRpm > 0 else { return 0 }
         return min(max(r.actualRpm / info.maxRpm, 0), 1)
+    }
+}
+
+public enum SupportLevel: String, Decodable, Sendable {
+    case validated
+    case compatible
+    case monitorOnly = "monitor_only"
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = SupportLevel(rawValue: raw) ?? .monitorOnly
     }
 }
 
@@ -148,11 +163,15 @@ public struct Status: Decodable, Equatable, Sendable {
     public let uptimeS: Double
     public let model: String
     public let writesEnabled: Bool
+    public let chip: String
+    public let support: SupportLevel
+    public let supportNote: String
+    public let controlDisabled: String?
 
     private enum CodingKeys: String, CodingKey {
         case mode, profile, decision, reason, hotspotKey, hotspotC, controlC, dutyPct, fans, groups
         case controlSensorCount, tickUs, ticks, smcWrites, lastError, externalOverride, conflicts, uptimeS
-        case model, writesEnabled
+        case model, writesEnabled, chip, support, supportNote, controlDisabled
     }
 
     public init(from decoder: Decoder) throws {
@@ -177,6 +196,10 @@ public struct Status: Decodable, Equatable, Sendable {
         uptimeS = try c.decode(Double.self, forKey: .uptimeS)
         model = try c.decodeIfPresent(String.self, forKey: .model) ?? ""
         writesEnabled = try c.decodeIfPresent(Bool.self, forKey: .writesEnabled) ?? true
+        chip = try c.decodeIfPresent(String.self, forKey: .chip) ?? ""
+        support = try c.decodeIfPresent(SupportLevel.self, forKey: .support) ?? .monitorOnly
+        supportNote = try c.decodeIfPresent(String.self, forKey: .supportNote) ?? ""
+        controlDisabled = try c.decodeIfPresent(String.self, forKey: .controlDisabled)
     }
 }
 

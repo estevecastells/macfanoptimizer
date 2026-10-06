@@ -45,7 +45,13 @@ done
 echo "==> Installing daemon to ${HELPER}"
 mkdir -p "$(dirname "$HELPER")" "$(dirname "$CLI")"
 # Stop the running instance first; it returns fans to macOS on SIGTERM.
+# bootout returns before the service has fully exited, and bootstrapping
+# again too early fails ("Bootstrap failed: 5"), so wait until it's gone.
 launchctl bootout "system/${LABEL}" 2>/dev/null || true
+for _ in $(seq 1 40); do
+  launchctl print "system/${LABEL}" >/dev/null 2>&1 || break
+  sleep 0.25
+done
 install -m 755 -o root -g wheel "${bin_dir}/fand" "$HELPER"
 install -m 755 -o root -g wheel "${bin_dir}/fanctl" "$CLI"
 # Binaries from a browser download carry a quarantine flag; launchd must not trip over it.
@@ -94,8 +100,16 @@ chown root:wheel "$PLIST"
 chmod 644 "$PLIST"
 
 echo "==> Starting ${LABEL}"
-launchctl bootstrap system "$PLIST"
 launchctl enable "system/${LABEL}"
+started=""
+for _ in 1 2 3 4 5; do
+  if launchctl bootstrap system "$PLIST" 2>/dev/null; then
+    started=1
+    break
+  fi
+  sleep 1
+done
+[[ -n "$started" ]] || { echo "launchctl bootstrap failed; see ${LOG}" >&2; exit 1; }
 
 for _ in 1 2 3 4 5 6 7 8 9 10; do
   [[ -S /var/run/macfanoptimizer.sock ]] && break

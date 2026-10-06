@@ -2,6 +2,31 @@
 
 Apple doesn't document the SMC. Everything here was found out by reading this machine's SMC directly (`fanctl keys`), by load experiments, and by watching how the system behaves. When you add facts, say how you found them.
 
+## Support levels
+
+The daemon assesses each Mac at startup (`fand::assess`) from what the SMC exposes:
+
+| Level | When | Fan control |
+|---|---|---|
+| **Validated** | Model listed in `VALIDATED_MODELS` with a test report | On |
+| **Compatible** | Apple Silicon, ≥ 1 fan with `F<n>Ac/Tg/Mn/Mx` and a mode key, ≥ 4 recognized die sensors | On by default (`control_unvalidated_models`), verified at runtime |
+| **Monitoring only** | No fans, missing keys, too few recognized sensors, or not Apple Silicon | Off |
+
+**Runtime verification** applies on every Mac, validated ones included. After the first write, each fan must report forced mode, hold our target in `F<n>Tg`, and spin to within max(250 rpm, 10 %) of it within 30 s. Otherwise all fans are released to macOS and control stays off until the daemon restarts (`Reason::ControlDisabled`). It's covered by simulator tests for fans that ignore writes, an OS that keeps reclaiming forced mode, and a slow unlock that succeeds in time.
+
+## Chip generation notes
+
+Our own measurements cover only the M5 Pro below. The rest comes from other open-source fan tools and is **unverified here**; reports welcome.
+
+| Generation | Mode key | `Ftst` unlock | Die sensor prefixes |
+|---|---|---|---|
+| M1, M2 | `F<n>md` | Present on recent macOS; must be 1 before forced mode sticks | `Tp` (P-cores), `Te` (E-cores), `Tg` (GPU) |
+| M3 | `F<n>md` | Present | `Te`, `Tf` (P-cores and GPU) |
+| M4 | `F<n>md` | Present | `Tp`, `Te`, `Tg` |
+| M5 (Pro) | `F<n>md` | **Absent** | `Tm`, `Ts`, `Tp`, `Tg` (measured below) |
+
+The daemon handles both `F<n>md` and `F<n>Md`, writes `Ftst=1` before forcing a fan (and `0` after releasing the last one) whenever the key exists, and keeps re-asserting forced mode each tick if the OS takes it back, until verification passes or times out.
+
 ## Mac17,9 (M5 Pro MacBook Pro), macOS 26
 
 ### Fans
@@ -50,14 +75,14 @@ Each SMC read takes about 135 µs wall time and about 13 µs CPU on this machine
 ## Validating a new model
 
 1. Quit every other fan-control app.
-2. `make build`, then collect `target/release/fanctl probe`, `fanctl keys F` and `fanctl sensors`. These are read-only.
+2. Run `fanctl report`. It's read-only.
 3. Force a speed and watch it take effect:
    ```sh
    sudo target/release/fanctl fan set all 4000   # should report actual ≈ 4000 after 3 s
    sudo target/release/fanctl fan set all 99999  # clamps to max
    sudo target/release/fanctl fan release        # back to macOS; fans should spin down
    ```
-   Note: `fanctl fan` refuses to write on models not in `SUPPORTED_MODELS`. For this test, temporarily add your model to the list in `crates/fand/src/lib.rs` and rebuild.
+   `fanctl fan` works on validated and compatible Macs, and refuses on monitoring-only ones.
 4. Install (`make install`), put the machine under load for 10 minutes (for example `yes > /dev/null` on every core, or a big compile), and check that `fanctl status` reaches max fans. Then stop the load and confirm the fans return to macOS (`reason Idle`) within a few minutes.
 5. Check sleep/wake: sleep under load, wake, and confirm `fanctl status` shows the fans forced again within one tick.
-6. Open a PR adding the model, with these outputs.
+6. Run `fanctl report` and open a [hardware report](https://github.com/estevecastells/macfanoptimizer/issues/new?template=model_support.yml), or a PR adding the model to `VALIDATED_MODELS` with the report attached.

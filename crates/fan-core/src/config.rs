@@ -116,7 +116,9 @@ pub struct SensorConfig {
 impl Default for SensorConfig {
     fn default() -> Self {
         SensorConfig {
-            families: ["Tp", "Tm", "Ts", "Tg", "Te"].map(String::from).to_vec(),
+            // Tp/Te: CPU clusters (M1–M5), Tf: M3-generation CPU/GPU, Tg: GPU,
+            // Tm/Ts: M5 CPU/SoC clusters (see docs/HARDWARE.md).
+            families: ["Tp", "Te", "Tf", "Tm", "Ts", "Tg"].map(String::from).to_vec(),
             include: vec![],
             exclude: vec![],
             min_valid_c: 10.0,
@@ -145,8 +147,9 @@ pub struct Config {
     pub sensors: SensorConfig,
     /// Users (besides root) allowed to change settings over the socket.
     pub allowed_uids: Vec<u32>,
-    /// Control fans on Mac models that haven't been validated (see `SUPPORTED_MODELS` in fand).
-    pub allow_unsupported_model: bool,
+    /// Control fans on compatible Macs that nobody has validated yet (guarded by
+    /// runtime verification). Set to false to keep such Macs read-only.
+    pub control_unvalidated_models: bool,
 }
 
 impl Default for Config {
@@ -161,7 +164,7 @@ impl Default for Config {
             safety: Safety::default(),
             sensors: SensorConfig::default(),
             allowed_uids: vec![],
-            allow_unsupported_model: false,
+            control_unvalidated_models: true,
         }
     }
 }

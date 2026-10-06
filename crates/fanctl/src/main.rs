@@ -51,6 +51,8 @@ enum Cmd {
     },
     /// Read fans and the control temperature directly from the SMC (no daemon needed).
     Probe,
+    /// Print a Markdown hardware report to paste into a GitHub issue (read-only).
+    Report,
     /// Dump raw SMC keys, optionally filtered by prefix.
     Keys { prefix: Option<String> },
     /// Low-level fan writes for hardware bring-up. Requires root; stop the daemon first.
@@ -201,6 +203,7 @@ fn run(cli: &Cli) -> Result<(), String> {
         }
         Cmd::Sensors { all } => sensors(cli, *all)?,
         Cmd::Probe => probe()?,
+        Cmd::Report => report(cli)?,
         Cmd::Keys { prefix } => keys(prefix.as_deref())?,
         Cmd::Fan { action } => fan(action)?,
         Cmd::Simulate { scenario, mode, profile, duration, csv } => {
@@ -319,22 +322,134 @@ fn sensors(cli: &Cli, all: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Open the SMC read-only and assess this machine the same way the daemon does.
+fn assess_machine() -> Result<(fand::SmcHardware, fan_core::protocol::MachineInfo), String> {
+    let mut hw = open_hw(false)?;
+    hw.set_quiet();
+    let control = fan_core::sensors::select_control_keys(hw.temperature_keys(), &Config::default().sensors).len();
+    let machine = fand::assess(&fand::hardware_model(), &fand::chip_name(), &hw, control);
+    Ok((hw, machine))
+}
+
+/// One read-only control tick: what the controller would see right now.
+fn read_only_status(
+    hw: fand::SmcHardware,
+    machine: fan_core::protocol::MachineInfo,
+) -> Result<(Status, fand::SmcHardware), String> {
+    let mut engine =
+        fan_core::Engine::new(hw, Config { mode: Mode::System, ..Config::default() }).map_err(|e| e.to_string())?;
+    engine.set_machine(machine, false);
+    let status = engine.tick(0.0).clone();
+    Ok((status, engine.into_hardware()))
+}
+
 fn probe() -> Result<(), String> {
-    let model = fand::hardware_model();
-    let hw = open_hw(false)?;
+    let (hw, machine) = assess_machine()?;
     println!(
-        "model {model} ({}), {} fans, {} temperature sensors, Ftst unlock key: {}",
-        if fand::is_supported_model(&model) { "supported" } else { "NOT validated" },
+        "{} · {} · macOS {}\nsupport: {:?}: {}",
+        machine.model,
+        machine.chip,
+        fand::os_version(),
+        machine.support,
+        machine.note
+    );
+    println!(
+        "{} fans, {} temperature sensors, Ftst unlock key: {}",
         hw.fans().len(),
         hw.temperature_keys().len(),
         hw.has_unlock_key()
     );
-    let mut engine =
-        fan_core::Engine::new(hw, Config { mode: Mode::System, ..Config::default() }).map_err(|e| e.to_string())?;
-    // System mode with writes disabled: a pure read of what the controller sees.
-    engine.set_machine(model, false);
-    let status = engine.tick(0.0).clone();
+    for issue in hw.issues() {
+        println!("issue: {issue}");
+    }
+    let (status, _) = read_only_status(hw, machine)?;
     print_status(&status);
+    Ok(())
+}
+
+/// Markdown hardware report to paste into a GitHub issue.
+fn report(cli: &Cli) -> Result<(), String> {
+    let (hw, machine) = assess_machine()?;
+    let fans: Vec<String> = hw
+        .fans()
+        .iter()
+        .zip(hw.mode_keys())
+        .map(|(f, k)| format!("F{}: {:.0}–{:.0} rpm (mode key `{k}`)", f.index, f.min_rpm, f.max_rpm))
+        .collect();
+    let issues = if hw.issues().is_empty() { "none".to_string() } else { hw.issues().join("; ") };
+    let unlock = if hw.has_unlock_key() { "present" } else { "absent" };
+    let total_sensors = hw.temperature_keys().len();
+    let (status, _) = read_only_status(hw, machine.clone())?;
+
+    let daemon = match fand::client::request(&cli.socket, &Request::Status) {
+        Ok(Response::Status { status: d }) => {
+            let verification: Vec<String> = d
+                .fans
+                .iter()
+                .map(|f| {
+                    let v = match f.verified {
+                        Some(true) => "verified ✅",
+                        Some(false) => "FAILED ❌",
+                        None => "not yet tested",
+                    };
+                    format!("fan {} {v}", f.info.index)
+                })
+                .collect();
+            let mut line = format!(
+                "running · mode {:?} · writes {} · {} · up {:.0} s",
+                d.mode,
+                if d.writes_enabled { "on" } else { "off" },
+                verification.join(", "),
+                d.uptime_s
+            );
+            if let Some(why) = d.control_disabled {
+                line.push_str(&format!(" · control disabled: {why}"));
+            }
+            line
+        }
+        _ => "not running".to_string(),
+    };
+
+    println!("### MacFanOptimizer hardware report\n");
+    println!("| | |\n|---|---|");
+    println!("| Model | `{}` |", machine.model);
+    println!("| Chip | {} |", machine.chip);
+    println!("| macOS | {} |", fand::os_version());
+    println!("| MacFanOptimizer | {} |", env!("CARGO_PKG_VERSION"));
+    println!("| Support | {:?}: {} |", machine.support, machine.note);
+    println!("| Fans | {} |", if fans.is_empty() { "none".to_string() } else { fans.join("<br>") });
+    println!("| `Ftst` unlock key | {unlock} |");
+    println!("| Temperature sensors | {total_sensors} total, {} used for control |", status.control_sensor_count);
+    println!(
+        "| Control temperature now | {:.1} °C (hottest {} at {:.1} °C) |",
+        status.control_c.unwrap_or(f64::NAN),
+        status.hotspot_key.map(|k| k.to_string()).unwrap_or_default(),
+        status.hotspot_c.unwrap_or(f64::NAN)
+    );
+    for f in &status.fans {
+        if let Some(r) = f.reading {
+            println!(
+                "| Fan {} now | {:.0} rpm (target {:.0}, {}) |",
+                f.info.index,
+                r.actual_rpm,
+                r.target_rpm,
+                if r.forced { "forced" } else { "macOS" }
+            );
+        }
+    }
+    println!("| Daemon | {daemon} |");
+    println!("| Discovery issues | {issues} |");
+    println!("\n<details><summary>Sensor groups</summary>\n\n| Group | Max °C | Avg °C | Sensors |\n|---|---|---|---|");
+    for g in &status.groups {
+        println!("| {} | {:.1} | {:.1} | {} |", g.group, g.max_c, g.avg_c, g.count);
+    }
+    println!("\n</details>\n\n<details><summary>Fan SMC keys</summary>\n\n```text");
+    keys(Some("F"))?;
+    println!("```\n\n</details>");
+    eprintln!(
+        "\nCopy this into a model support issue: fanctl report | pbcopy\n\
+         https://github.com/estevecastells/macfanoptimizer/issues/new?template=model_support.yml"
+    );
     Ok(())
 }
 
@@ -359,11 +474,11 @@ fn fan(action: &FanAction) -> Result<(), String> {
     if unsafe { libc::geteuid() } != 0 {
         return Err("fan writes require root: sudo fanctl fan ...".into());
     }
-    let model = fand::hardware_model();
-    if !fand::is_supported_model(&model) {
-        return Err(format!("{model} is not a validated model; refusing to write"));
+    let (mut hw, machine) = assess_machine()?;
+    if machine.support == fan_core::protocol::SupportLevel::MonitorOnly {
+        return Err(format!("fan control isn't available on this Mac: {}", machine.note));
     }
-    let mut hw = open_hw(true)?;
+    hw.set_write_enabled(true);
     let fans: Vec<_> = hw.fans().to_vec();
     match action {
         FanAction::Set { fan, rpm } => {

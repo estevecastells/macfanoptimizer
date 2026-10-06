@@ -4,7 +4,7 @@
 use crate::config::{Config, Mode};
 use crate::controller::{Controller, Decision, Reason};
 use crate::hardware::Hardware;
-use crate::protocol::{FanStatus, SensorValue, Status};
+use crate::protocol::{FanStatus, MachineInfo, SensorValue, Status};
 use crate::sensors::{self, SensorKey};
 use std::time::Instant;
 
@@ -17,6 +17,24 @@ enum Applied {
     Target(f64),
 }
 
+/// How long a fan may take to obey a new target before we conclude that
+/// control doesn't work on this machine. Fans spin up in a few seconds; the
+/// margin covers M1–M4 `Ftst` unlocks, which can need several retries.
+pub const VERIFY_TIMEOUT_S: f64 = 30.0;
+
+/// Runtime proof that writes actually move the fans. This is what makes it
+/// safe to enable control on models nobody has validated.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Verify {
+    Untested,
+    Pending { since: f64, target: f64 },
+    Passed,
+}
+
+fn rpm_tolerance(target: f64) -> f64 {
+    (target * 0.10).max(250.0)
+}
+
 pub struct Engine<H: Hardware> {
     hw: H,
     cfg: Config,
@@ -25,6 +43,9 @@ pub struct Engine<H: Hardware> {
     /// Hottest sensors from the last full scan; read every tick.
     hot_keys: Vec<SensorKey>,
     applied: Vec<Applied>,
+    verify: Vec<Verify>,
+    /// Set when verification failed: fans stay with macOS until restart.
+    disabled: Option<String>,
     readings: Vec<(SensorKey, f64)>,
     status: Status,
     started: Option<f64>,
@@ -44,7 +65,11 @@ impl<H: Hardware> Engine<H> {
             hotspot_c: None,
             control_c: None,
             duty_pct: 0.0,
-            fans: hw.fans().iter().map(|&info| FanStatus { info, reading: None, commanded_rpm: None }).collect(),
+            fans: hw
+                .fans()
+                .iter()
+                .map(|&info| FanStatus { info, reading: None, commanded_rpm: None, verified: None })
+                .collect(),
             groups: vec![],
             control_sensor_count: control_keys.len(),
             tick_us: 0,
@@ -56,6 +81,10 @@ impl<H: Hardware> Engine<H> {
             uptime_s: 0.0,
             model: String::new(),
             writes_enabled: true,
+            chip: String::new(),
+            support: Default::default(),
+            support_note: String::new(),
+            control_disabled: None,
         };
         Ok(Engine {
             hw,
@@ -64,6 +93,8 @@ impl<H: Hardware> Engine<H> {
             control_keys,
             hot_keys: Vec::new(),
             applied: vec![Applied::Unknown; fans],
+            verify: vec![Verify::Untested; fans],
+            disabled: None,
             readings: Vec::new(),
             status,
             started: None,
@@ -78,9 +109,19 @@ impl<H: Hardware> Engine<H> {
         &self.status
     }
 
-    pub fn set_machine(&mut self, model: String, writes_enabled: bool) {
-        self.status.model = model;
+    /// Describe the machine. Fan-response verification only runs when writes
+    /// really reach the hardware (not in dry-run or monitor-only mode).
+    pub fn set_machine(&mut self, machine: MachineInfo, writes_enabled: bool) {
+        self.status.model = machine.model;
+        self.status.chip = machine.chip;
+        self.status.support = machine.support;
+        self.status.support_note = machine.note;
         self.status.writes_enabled = writes_enabled;
+    }
+
+    /// Why control was disabled at runtime, if it was.
+    pub fn control_disabled(&self) -> Option<&str> {
+        self.disabled.as_deref()
     }
 
     pub fn set_conflicts(&mut self, conflicts: Vec<String>) {
@@ -93,6 +134,10 @@ impl<H: Hardware> Engine<H> {
 
     pub fn hardware_mut(&mut self) -> &mut H {
         &mut self.hw
+    }
+
+    pub fn into_hardware(self) -> H {
+        self.hw
     }
 
     pub fn control_keys(&self) -> &[SensorKey] {
@@ -141,7 +186,10 @@ impl<H: Hardware> Engine<H> {
         let control = (!top.is_empty()).then(|| top.iter().map(|r| r.1).sum::<f64>() / top.len() as f64);
 
         // 2. Decide.
-        let (decision, reason) = self.ctrl.update(&self.cfg, control, now);
+        let (mut decision, mut reason) = self.ctrl.update(&self.cfg, control, now);
+        if self.disabled.is_some() {
+            (decision, reason) = (Decision::System, Reason::ControlDisabled);
+        }
 
         // 3. Apply.
         let mut last_error = None;
@@ -156,6 +204,21 @@ impl<H: Hardware> Engine<H> {
                     None
                 }
             };
+
+            if let (Verify::Pending { since, target }, Some(r)) = (self.verify[i], reading) {
+                if self.status.writes_enabled {
+                    let target_held = (r.target_rpm - target).abs() <= self.cfg.write_deadband_rpm;
+                    if r.forced && target_held && (r.actual_rpm - target).abs() <= rpm_tolerance(target) {
+                        self.verify[i] = Verify::Passed;
+                    } else if now - since > VERIFY_TIMEOUT_S {
+                        self.disabled = Some(format!(
+                            "fan {} did not respond to control: asked for {:.0} rpm, fan at {:.0} rpm \
+                             (SMC target {:.0}, forced {}). Fans returned to macOS.",
+                            info.index, target, r.actual_rpm, r.target_rpm, r.forced
+                        ));
+                    }
+                }
+            }
 
             let wanted = match decision {
                 Decision::System => None,
@@ -195,6 +258,11 @@ impl<H: Hardware> Engine<H> {
                             Ok(()) => {
                                 self.applied[i] = Applied::Target(rpm);
                                 self.status.smc_writes += 1;
+                                self.verify[i] = match self.verify[i] {
+                                    Verify::Untested => Verify::Pending { since: now, target: rpm },
+                                    Verify::Pending { since, .. } => Verify::Pending { since, target: rpm },
+                                    Verify::Passed => Verify::Passed,
+                                };
                                 Ok(())
                             }
                             Err(e) => {
@@ -217,6 +285,21 @@ impl<H: Hardware> Engine<H> {
                 Applied::Target(r) => Some(r),
                 _ => None,
             };
+            fs.verified = match self.verify[i] {
+                Verify::Passed => Some(true),
+                _ if self.disabled.is_some() => Some(false),
+                _ => None,
+            };
+        }
+
+        // A failed verification takes effect immediately, not on the next tick.
+        if self.disabled.is_some() && self.applied.iter().any(|a| !matches!(a, Applied::Released)) {
+            if let Err(e) = self.release_all() {
+                last_error = Some(e);
+            }
+            decision = Decision::System;
+            reason = Reason::ControlDisabled;
+            self.status.fans.iter_mut().for_each(|f| f.commanded_rpm = None);
         }
 
         // 4. Report.
@@ -234,6 +317,7 @@ impl<H: Hardware> Engine<H> {
         s.last_error = last_error;
         s.external_override = external;
         s.uptime_s = now - started;
+        s.control_disabled = self.disabled.clone();
         s.tick_us = t0.elapsed().as_micros() as u64;
         &self.status
     }
@@ -328,6 +412,68 @@ mod tests {
         for i in 0..2 {
             assert!(!e.hardware_mut().read_fan(i).unwrap().forced);
         }
+    }
+
+    fn run(e: &mut Engine<SimHardware>, from: u32, to: u32) {
+        for t in from..to {
+            e.hardware_mut().advance(1.0, 75.0);
+            e.tick(t as f64);
+        }
+    }
+
+    #[test]
+    fn verification_passes_when_fans_obey() {
+        let mut e = Engine::new(hot(SimHardware::new()), Config::default()).unwrap();
+        run(&mut e, 0, 15);
+        assert!(e.status().fans.iter().all(|f| f.verified == Some(true)));
+        assert_eq!(e.control_disabled(), None);
+    }
+
+    #[test]
+    fn fans_that_ignore_writes_disable_control_and_return_to_macos() {
+        let mut e = Engine::new(hot(SimHardware::new()), Config::default()).unwrap();
+        e.hardware_mut().ignore_writes = true;
+        run(&mut e, 0, (VERIFY_TIMEOUT_S as u32) + 5);
+        let s = e.status();
+        assert_eq!(s.reason, Reason::ControlDisabled);
+        assert!(s.control_disabled.as_deref().unwrap().contains("did not respond"));
+        for i in 0..2 {
+            assert!(!e.hardware_mut().read_fan(i).unwrap().forced, "fan {i} must be back with macOS");
+        }
+        // And it stays off: no further writes.
+        let writes = e.status().smc_writes;
+        run(&mut e, 40, 60);
+        assert_eq!(e.status().smc_writes, writes);
+    }
+
+    #[test]
+    fn os_that_keeps_reclaiming_fans_disables_control() {
+        // Like thermalmonitord undoing forced mode on M1–M4 without a working Ftst unlock.
+        let mut e = Engine::new(hot(SimHardware::new()), Config::default()).unwrap();
+        e.hardware_mut().reclaim_forced = true;
+        run(&mut e, 0, (VERIFY_TIMEOUT_S as u32) + 5);
+        assert_eq!(e.status().reason, Reason::ControlDisabled);
+    }
+
+    #[test]
+    fn slow_unlock_within_timeout_still_verifies() {
+        // Forced mode only sticks after ~10 s of retries (an Ftst unlock taking effect).
+        let mut e = Engine::new(hot(SimHardware::new()), Config::default()).unwrap();
+        e.hardware_mut().reclaim_forced = true;
+        run(&mut e, 0, 10);
+        e.hardware_mut().reclaim_forced = false;
+        run(&mut e, 10, 25);
+        assert_eq!(e.control_disabled(), None);
+        assert!(e.status().fans.iter().all(|f| f.verified == Some(true)));
+    }
+
+    #[test]
+    fn dry_run_never_disables_control() {
+        let mut e = Engine::new(hot(SimHardware::new()), Config::default()).unwrap();
+        e.set_machine(MachineInfo::default(), false);
+        e.hardware_mut().ignore_writes = true;
+        run(&mut e, 0, 60);
+        assert_eq!(e.control_disabled(), None);
     }
 
     #[test]

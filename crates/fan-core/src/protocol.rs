@@ -53,6 +53,34 @@ pub struct FanStatus {
     pub reading: Option<FanReading>,
     /// RPM the daemon is currently commanding, if it is controlling this fan.
     pub commanded_rpm: Option<f64>,
+    /// Runtime check that the fan obeys: `None` until tested, then pass/fail.
+    #[serde(default)]
+    pub verified: Option<bool>,
+}
+
+/// How much we trust fan control on this Mac.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SupportLevel {
+    /// Tested end to end by maintainers or contributors.
+    Validated,
+    /// Has the standard fan keys and recognizable sensors, but nobody has
+    /// validated it yet. Control is enabled, guarded by runtime verification.
+    Compatible,
+    /// No fans, no controllable fans, or no recognizable sensors.
+    #[default]
+    MonitorOnly,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct MachineInfo {
+    /// e.g. `Mac17,9`
+    pub model: String,
+    /// e.g. `Apple M5 Pro`
+    pub chip: String,
+    pub support: SupportLevel,
+    /// Human-readable explanation of `support`.
+    pub note: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -98,6 +126,16 @@ pub struct Status {
     /// False in dry-run mode or on an unsupported model: decisions are computed but not applied.
     #[serde(default)]
     pub writes_enabled: bool,
+    /// e.g. `Apple M5 Pro`.
+    #[serde(default)]
+    pub chip: String,
+    #[serde(default)]
+    pub support: SupportLevel,
+    #[serde(default)]
+    pub support_note: String,
+    /// Set if fans failed runtime verification; control stays off until restart.
+    #[serde(default)]
+    pub control_disabled: Option<String>,
 }
 
 #[cfg(test)]

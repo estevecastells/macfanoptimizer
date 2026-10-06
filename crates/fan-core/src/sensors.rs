@@ -58,6 +58,7 @@ pub fn group_of(key: SensorKey) -> &'static str {
     match (k[1], k[2]) {
         (b'p', _) => "CPU P-cluster",
         (b'e', _) => "CPU E-cluster",
+        (b'f', _) => "CPU/GPU (f)",
         (b'm', _) => "CPU cluster (m)",
         (b's', _) => "SoC (s)",
         (b'g', _) => "GPU",

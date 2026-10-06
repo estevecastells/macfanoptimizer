@@ -45,7 +45,12 @@ check(try {
         && s.controlC == 61.5 && s.fans.count == 2 && s.fans[0].reading?.forced == true
         && s.fans[1].reading == nil && s.groups.first?.count == 23 && s.conflicts == ["Macs Fan Control"]
         && s.model == "Mac17,9" && s.writesEnabled
+        && s.chip == "Apple M5 Pro" && s.support == .validated && s.controlDisabled == nil
+        && s.fans[0].verified == true && s.fans[1].verified == nil
 }(), "decodes a full status response")
+
+check(try decode(Reason.self, "\"control_disabled\"") == .controlDisabled, "control_disabled reason")
+check(try decode(SupportLevel.self, "\"monitor_only\"") == .monitorOnly, "support level")
 
 check(try {
     guard case let .status(s) = try decode(Response.self, statusJSON) else { return false }

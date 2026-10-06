@@ -26,7 +26,8 @@
           "target_rpm": 6000.0,
           "forced": true
         },
-        "commanded_rpm": 2729.2
+        "commanded_rpm": 2729.2,
+        "verified": true
       },
       {
         "info": {
@@ -35,7 +36,8 @@
           "max_rpm": 7826.0
         },
         "reading": null,
-        "commanded_rpm": null
+        "commanded_rpm": null,
+        "verified": null
       }
     ],
     "groups": [
@@ -57,6 +59,10 @@
     ],
     "uptime_s": 24.0,
     "model": "Mac17,9",
-    "writes_enabled": true
+    "writes_enabled": true,
+    "chip": "Apple M5 Pro",
+    "support": "validated",
+    "support_note": "Validated on this model.",
+    "control_disabled": null
   }
 }

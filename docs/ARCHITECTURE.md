@@ -40,6 +40,8 @@ Each tick (default every 2 s):
    - When duty reaches 0, the fans are released to macOS. They are forced again as soon as the curve asks for more than 0 %.
 5. **Apply.** RPM = min + duty × (max − min). The SMC is written only when the target moves by at least `write_deadband_rpm` (50), when it reaches an extreme, when macOS took the fan back (`md == 0`, e.g. after wake), or when another process changed the target.
 
+6. **Verify.** After the first write, each fan must actually follow (forced mode held, target held, RPM within tolerance) within 30 s. If not, the fans go back to macOS and control is disabled until restart. This is what makes it safe to enable control on Macs nobody has validated (see [HARDWARE.md](HARDWARE.md#support-levels)).
+
 All of these knobs are in `config.toml` (see `fanctl default-config`).
 
 ## Why these choices
@@ -55,7 +57,7 @@ All of these knobs are in `config.toml` (see `fanctl default-config`).
 |---|---|---|
 | Codecs | `smc/src/value.rs` | SMC type encode/decode |
 | Curve, config, controller | `fan-core` unit tests | Interpolation, validation, hold, hysteresis, critical, failures |
-| Engine | `fan-core/src/engine.rs` | Adaptive scan counts, write deadband, override recovery, release |
+| Engine | `fan-core/src/engine.rs` | Adaptive scan counts, write deadband, override recovery, release, runtime verification (fans ignoring writes, OS reclaiming control, slow unlock) |
 | Closed loop | `fan-core/src/sim.rs` | Calibration, reaching max, no hunting, wake recovery, profile ordering |
 | Daemon IPC | `fand/tests/socket.rs` | Permissions, persistence, malformed input |
 | Wire compatibility | `fixtures/` + `KitChecks` | The Rust and Swift sides agree |

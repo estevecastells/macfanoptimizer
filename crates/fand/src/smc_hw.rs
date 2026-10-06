@@ -24,6 +24,10 @@ pub struct SmcHardware {
     /// Dry-run: values we pretended to write, returned by later reads so the
     /// engine behaves exactly as it would on a real install.
     shadow: std::collections::HashMap<FourCC, f64>,
+    /// Problems found during discovery (fans skipped, keys missing).
+    issues: Vec<String>,
+    /// Log suppressed writes (off for read-only tools like `fanctl probe`).
+    log_dry_writes: bool,
 }
 
 fn fan_key(i: u8, suffix: &str) -> FourCC {
@@ -35,19 +39,32 @@ impl SmcHardware {
     pub fn open(write_enabled: bool) -> Result<Self, String> {
         let mut smc = Smc::open().map_err(|e| e.to_string())?;
 
-        let count = smc.read_f64(smc::key("FNum")).map_err(|e| format!("reading fan count: {e}"))? as u8;
+        // Fanless Macs (e.g. MacBook Air) have no `FNum` or report 0.
+        let count = smc.read_f64(smc::key("FNum")).unwrap_or(0.0).clamp(0.0, 16.0) as u8;
         let mut fans = Vec::new();
         let mut keys = Vec::new();
+        let mut issues = Vec::new();
         for i in 0..count {
-            let min_rpm = smc.read_f64(fan_key(i, "Mn")).map_err(|e| e.to_string())?;
-            let max_rpm = smc.read_f64(fan_key(i, "Mx")).map_err(|e| e.to_string())?;
             // Apple Silicon uses `F0md`; Intel Macs used `F0Md`.
-            let mode = [fan_key(i, "md"), fan_key(i, "Md")]
-                .into_iter()
-                .find(|k| smc.key_info(*k).is_ok())
-                .ok_or_else(|| format!("fan {i}: no mode key"))?;
+            let mode = [fan_key(i, "md"), fan_key(i, "Md")].into_iter().find(|k| smc.key_info(*k).is_ok());
+            let missing: Vec<String> = ["Ac", "Tg", "Mn", "Mx"]
+                .iter()
+                .filter(|s| smc.key_info(fan_key(i, s)).is_err())
+                .map(|s| format!("F{i}{s}"))
+                .chain(mode.is_none().then(|| format!("F{i}md")))
+                .collect();
+            if !missing.is_empty() {
+                issues.push(format!("fan {i} skipped: missing SMC keys {}", missing.join(", ")));
+                continue;
+            }
+            let min_rpm = smc.read_f64(fan_key(i, "Mn")).unwrap_or(0.0);
+            let max_rpm = smc.read_f64(fan_key(i, "Mx")).unwrap_or(0.0);
+            if !(max_rpm > min_rpm && min_rpm >= 0.0 && max_rpm < 20_000.0) {
+                issues.push(format!("fan {i} skipped: implausible range {min_rpm}–{max_rpm} rpm"));
+                continue;
+            }
             fans.push(FanInfo { index: i, min_rpm, max_rpm });
-            keys.push(FanKeys { actual: fan_key(i, "Ac"), target: fan_key(i, "Tg"), mode });
+            keys.push(FanKeys { actual: fan_key(i, "Ac"), target: fan_key(i, "Tg"), mode: mode.unwrap() });
         }
 
         let unlock_key = Some(smc::key("Ftst")).filter(|k| smc.key_info(*k).is_ok());
@@ -70,11 +87,42 @@ impl SmcHardware {
             }
         }
 
-        Ok(SmcHardware { smc, fans, keys, temps, unlock_key, write_enabled, shadow: Default::default() })
+        Ok(SmcHardware {
+            smc,
+            fans,
+            keys,
+            temps,
+            unlock_key,
+            write_enabled,
+            shadow: Default::default(),
+            issues,
+            log_dry_writes: true,
+        })
     }
 
     pub fn has_unlock_key(&self) -> bool {
         self.unlock_key.is_some()
+    }
+
+    /// Enable or disable real SMC writes (decided after assessing the machine).
+    pub fn set_write_enabled(&mut self, enabled: bool) {
+        self.write_enabled = enabled;
+        self.shadow.clear();
+    }
+
+    /// Read-only tools don't need "would write" log lines.
+    pub fn set_quiet(&mut self) {
+        self.log_dry_writes = false;
+    }
+
+    /// Problems found during discovery.
+    pub fn issues(&self) -> &[String] {
+        &self.issues
+    }
+
+    /// The mode key name used for each fan (`F0md` or `F0Md`), for reports.
+    pub fn mode_keys(&self) -> Vec<String> {
+        self.keys.iter().map(|k| k.mode.to_string()).collect()
     }
 
     pub fn smc(&mut self) -> &mut Smc {
@@ -83,7 +131,9 @@ impl SmcHardware {
 
     fn write(&mut self, key: FourCC, v: f64) -> Result<(), String> {
         if !self.write_enabled {
-            crate::log!("[dry-run] would write {key} = {v}");
+            if self.log_dry_writes {
+                crate::log!("[dry-run] would write {key} = {v}");
+            }
             self.shadow.insert(key, v);
             return Ok(());
         }
