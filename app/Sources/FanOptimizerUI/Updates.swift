@@ -55,7 +55,7 @@ public final class Updates {
 
     func check(userInitiated: Bool) async {
         if case .installing = state { return }
-        state = .checking
+        if userInitiated { state = .checking }
         do {
             if let release = try await UpdateCheck.newer(than: Self.currentVersion) {
                 pending = release
@@ -63,11 +63,16 @@ public final class Updates {
                 if autoInstall && !userInitiated { await install(userInitiated: false) }
             } else {
                 pending = nil
-                state = .upToDate
+                // Only confirm "up to date" when asked, and only briefly.
+                state = userInitiated ? .upToDate : .idle
+                if userInitiated {
+                    try? await Task.sleep(for: .seconds(4))
+                    if state == .upToDate { state = .idle }
+                }
             }
         } catch {
             // Background checks fail quietly (offline, rate limit); only show errors the user asked for.
-            state = userInitiated ? .failed("Couldn't check for updates: \(error.localizedDescription)") : .idle
+            if userInitiated { state = .failed("Couldn't check for updates: \(error.localizedDescription)") }
         }
     }
 
