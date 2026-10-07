@@ -5,8 +5,7 @@ Releases are built and published by `.github/workflows/release.yml` when a versi
 1. Bump `version` in the root `Cargo.toml` (for example `0.2.0`), then run `cargo build` to refresh `Cargo.lock`.
 2. If the UI or the controller changed, refresh the README images:
    ```sh
-   fanctl status --json > /tmp/status.json
-   (cd app && swift run RenderScreenshots /tmp/status.json ../docs/images)   # menu bar panel, light + dark
+   (cd app && swift run RenderScreenshots ../docs/images/panel-status.json ../docs/images)   # menu bar panel, light + dark
    python3 docs/images/make_chart.py                                          # simulator chart, light + dark
    ```
 3. Check that `make ci` passes, then commit: `Release v0.2.0`.
@@ -18,6 +17,7 @@ Releases are built and published by `.github/workflows/release.yml` when a versi
    - `MacFanOptimizer-macos-arm64.zip`: menu bar app, bundling the daemon and installer
    - `macfanoptimizer-macos-arm64.tar.gz`: `fand`, `fanctl`, `install.sh`, `uninstall.sh`
    - `SHA256SUMS`
+   - `SHA256SUMS.sig`: Ed25519 signature checked by the in-app updater, made with the `UPDATE_SIGNING_KEY` secret. The workflow fails rather than publish an unsigned release.
 6. Verify the release: `MFO_DOWNLOAD_ONLY=1 bash scripts/get.sh` downloads the latest release and checks its checksums without installing anything.
 
 Asset names carry no version, so `releases/latest/download/<asset>` always resolves to the newest release. `scripts/get.sh` depends on this.

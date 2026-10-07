@@ -89,7 +89,7 @@ Safety: a hot chip always wins over a fixed speed, sensor failures hand control 
 | Performance | 50 °C | 76 °C |
 | Custom | `custom_curve` in the config file | |
 
-The switch at the top of the menu bar panel turns fan control off (macOS mode) and back on to the mode you last used. Temperatures follow your Celsius/Fahrenheit choice in **System Settings → General → Language & Region**.
+The app keeps itself up to date: it checks GitHub for new releases, verifies their signature and installs them (turn this off in the panel).  turns fan control off (macOS mode) and back on to the mode you last used. Temperatures follow your Celsius/Fahrenheit choice in **System Settings → General → Language & Region**.
 
 ### Simulated comparison
 
