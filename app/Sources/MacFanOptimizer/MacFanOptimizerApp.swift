@@ -24,7 +24,7 @@ struct MacFanOptimizerApp: App {
         MenuBarExtra {
             MenuContent(model: model)
         } label: {
-            MenuBarLabel(status: model.status, connection: model.connection)
+            MenuBarLabel(status: model.status, connection: model.connection, unit: model.temperatureUnit)
         }
         .menuBarExtraStyle(.window)
     }

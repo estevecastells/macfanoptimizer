@@ -22,6 +22,11 @@ public final class AppModel {
     /// Mirrors the login item state; set through `setOpenAtLogin`.
     private(set) var openAtLogin = false
     private(set) var loginItemNeedsApproval = false
+    /// The user's Temperature setting, re-read on every poll so a change in
+    /// System Settings shows up within one interval.
+    public private(set) var temperatureUnit = TemperatureUnit.preferred()
+    /// The mode the on/off switch restores. Persisted so it survives relaunches.
+    private(set) var lastActiveMode: Mode = AppModel.loadLastActiveMode()
 
     private let client = DaemonClient()
     private var pollTask: Task<Void, Never>?
@@ -35,8 +40,10 @@ public final class AppModel {
     }
 
     /// A static model for previews and README screenshots: no daemon, no polling.
-    public init(previewStatus: Status) {
+    /// Celsius by default so screenshots don't depend on the machine's settings.
+    public init(previewStatus: Status, temperatureUnit: TemperatureUnit = .celsius) {
         status = previewStatus
+        self.temperatureUnit = temperatureUnit
         connection = .connected
         openAtLogin = true
     }
@@ -91,9 +98,14 @@ public final class AppModel {
     }
 
     func refresh() async {
+        let unit = TemperatureUnit.preferred()
+        if unit != temperatureUnit { temperatureUnit = unit }
         do {
-            status = try await client.status()
+            let status = try await client.status()
+            self.status = status
             connection = .connected
+            // Also catches changes made with fanctl.
+            rememberActiveMode(status.mode)
         } catch DaemonError.notRunning {
             status = nil
             connection = .missing
@@ -103,7 +115,32 @@ public final class AppModel {
     }
 
     func setMode(_ mode: Mode) {
+        rememberActiveMode(mode)
         perform(.setMode(mode))
+    }
+
+    // MARK: On/off switch
+
+    private static let lastActiveModeKey = "lastActiveMode"
+
+    /// Off hands the fans to macOS (`system` mode); on restores the last other mode.
+    func setControlEnabled(_ enabled: Bool) {
+        setMode(enabled ? lastActiveMode : .system)
+    }
+
+    private func rememberActiveMode(_ mode: Mode) {
+        guard mode != .system, mode != lastActiveMode else { return }
+        lastActiveMode = mode
+        if let data = try? JSONEncoder().encode(mode) {
+            UserDefaults.standard.set(data, forKey: Self.lastActiveModeKey)
+        }
+    }
+
+    private static func loadLastActiveMode() -> Mode {
+        guard let data = UserDefaults.standard.data(forKey: lastActiveModeKey),
+            let mode = try? JSONDecoder().decode(Mode.self, from: data), mode != .system
+        else { return .smart }
+        return mode
     }
 
     func setProfile(_ profile: Profile) {

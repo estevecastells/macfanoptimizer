@@ -81,7 +81,21 @@ for (req, expected) in zip(requests, requestFixtures) {
 }
 
 // Formatting
-check(Format.celsius(61.5) == "62°", "celsius rounding")
+check(Format.temperature(61.5, .celsius) == "62°", "celsius rounding")
+check(Format.temperature(61.5, .fahrenheit) == "143°", "fahrenheit conversion and rounding")
+check(Format.temperature(nil, .fahrenheit) == "–" && Format.temperature(.nan, .celsius) == "–", "missing temperature")
+check(Format.degrees(95, .celsius) == "95 °C" && Format.degrees(95, .fahrenheit) == "203 °F", "degrees with unit")
+check(try {
+    guard case let .status(s) = try decode(Response.self, statusJSON) else { return false }
+    return Format.menuBar(s, .celsius) == "62° 5990" && Format.menuBar(s, .fahrenheit) == "143° 5990"
+}(), "menu bar text in both units")
+
+// Temperature unit preference: the explicit setting wins over the region's convention.
+check(TemperatureUnit.resolve(setting: "Fahrenheit", region: "ES") == .fahrenheit, "Fahrenheit setting")
+check(TemperatureUnit.resolve(setting: "Celsius", region: "US") == .celsius, "Celsius setting overrides US region")
+check(TemperatureUnit.resolve(setting: nil, region: "US") == .fahrenheit, "US region defaults to Fahrenheit")
+check(TemperatureUnit.resolve(setting: nil, region: "ES") == .celsius, "other regions default to Celsius")
+check(TemperatureUnit.resolve(setting: nil, region: nil) == .celsius, "no region defaults to Celsius")
 check(Format.rpm(0) == "off" && Format.rpm(2729) == "2730", "rpm formatting")
 
 // Client error mapping: connecting to a missing socket means "not running".

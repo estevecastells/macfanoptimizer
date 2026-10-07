@@ -34,7 +34,7 @@ Quit Macs Fan Control before installing. <a href="#install">More install options
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/panel-dark.png">
-    <img src="docs/images/panel-light.png" width="320" alt="MacFanOptimizer menu bar panel: chip temperature 59°, Smart mode with both fans at 47% speed, profile picker, and per-cluster temperatures">
+    <img src="docs/images/panel-light.png" width="320" alt="MacFanOptimizer menu bar panel: chip temperature 59°, an on/off switch, Smart mode with both fans at 47% speed, profile picker, and per-cluster temperatures">
   </picture>
 </p>
 
@@ -86,6 +86,8 @@ Safety: a hot chip always wins over a fixed speed, sensor failures hand control 
 | Balanced | 58 °C | 83 °C |
 | Performance | 50 °C | 76 °C |
 | Custom | `custom_curve` in the config file | |
+
+The switch at the top of the menu bar panel turns fan control off (macOS mode) and back on to the mode you last used. Temperatures follow your Celsius/Fahrenheit choice in **System Settings → General → Language & Region**.
 
 ### Simulated comparison
 
@@ -176,7 +178,7 @@ Then delete MacFanOptimizer.app.
 ## Command line
 
 ```sh
-fanctl status                 # temperatures, fans, current decision
+fanctl status                 # temperatures, fans, current decision (add --fahrenheit or --celsius)
 fanctl watch                  # live view
 fanctl mode smart             # smart | fixed 3500 | max | system
 fanctl profile quiet          # quiet | balanced | performance | custom

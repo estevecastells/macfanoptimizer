@@ -16,6 +16,12 @@ struct Cli {
     /// Print raw JSON.
     #[arg(long, global = true)]
     json: bool,
+    /// Show temperatures in °F. Default: the macOS Temperature setting (Language & Region).
+    #[arg(long, global = true, conflicts_with = "celsius")]
+    fahrenheit: bool,
+    /// Show temperatures in °C.
+    #[arg(long, global = true)]
+    celsius: bool,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -145,6 +151,81 @@ impl From<ScenarioArg> for Scenario {
     }
 }
 
+/// Display unit for temperatures. The daemon, JSON output, reports and the
+/// simulator always use Celsius; this only affects human-readable status lines.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum TempUnit {
+    Celsius,
+    Fahrenheit,
+}
+
+impl TempUnit {
+    fn of(cli: &Cli) -> Self {
+        if cli.fahrenheit {
+            TempUnit::Fahrenheit
+        } else if cli.celsius {
+            TempUnit::Celsius
+        } else {
+            Self::preferred()
+        }
+    }
+
+    /// The user's macOS setting, as the menu bar app reads it: the global default
+    /// `AppleTemperatureUnit`, else the region's convention from `AppleLocale`.
+    fn preferred() -> Self {
+        let read = |key: &str| {
+            let out = std::process::Command::new("/usr/bin/defaults").args(["read", "-g", key]).output().ok()?;
+            out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        };
+        Self::resolve(read("AppleTemperatureUnit").as_deref(), || read("AppleLocale"))
+    }
+
+    fn resolve(setting: Option<&str>, locale: impl FnOnce() -> Option<String>) -> Self {
+        match setting {
+            Some("Fahrenheit") => TempUnit::Fahrenheit,
+            Some("Celsius") => TempUnit::Celsius,
+            _ => match locale().as_deref().and_then(region_of) {
+                // Regions whose default is Fahrenheit (CLDR), matching the app.
+                Some(r) if ["US", "BS", "BZ", "KY", "PR", "PW"].contains(&r.as_str()) => TempUnit::Fahrenheit,
+                _ => TempUnit::Celsius,
+            },
+        }
+    }
+
+    fn convert(self, c: f64) -> f64 {
+        match self {
+            TempUnit::Celsius => c,
+            TempUnit::Fahrenheit => c * 9.0 / 5.0 + 32.0,
+        }
+    }
+
+    fn symbol(self) -> &'static str {
+        match self {
+            TempUnit::Celsius => "°C",
+            TempUnit::Fahrenheit => "°F",
+        }
+    }
+
+    /// One decimal and the unit, right-aligned to `width` digits: "  61.5 °C".
+    fn show(self, c: Option<f64>, width: usize) -> String {
+        format!("{:>width$.1} {}", self.convert(c.unwrap_or(f64::NAN)), self.symbol())
+    }
+}
+
+/// Region of a locale identifier such as `en_US`, `es-419` or `en_US@rg=eszzzz`
+/// (an explicit region override from Language & Region wins).
+fn region_of(locale: &str) -> Option<String> {
+    let (base, keywords) = locale.split_once('@').unwrap_or((locale, ""));
+    let rg = keywords.split(';').find_map(|kv| kv.strip_prefix("rg="));
+    if let Some(rg) = rg.filter(|rg| rg.len() >= 2 && rg.is_char_boundary(2)) {
+        return Some(rg[..2].to_uppercase());
+    }
+    base.split(['_', '-'])
+        .skip(1)
+        .find(|p| p.len() == 2 && p.chars().all(|c| c.is_ascii_alphabetic()))
+        .map(str::to_uppercase)
+}
+
 fn mode_from(m: ModeArg, rpm: Option<f64>) -> Result<Mode, String> {
     Ok(match m {
         ModeArg::System => Mode::System,
@@ -181,17 +262,20 @@ fn run(cli: &Cli) -> Result<(), String> {
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&status).unwrap());
             } else {
-                print_status(&status);
+                print_status(&status, TempUnit::of(cli));
             }
         }
-        Cmd::Watch { seconds } => loop {
-            let Response::Status { status } = call(cli, Request::Status)? else {
-                return Err("unexpected response".into());
-            };
-            print!("\x1b[2J\x1b[H");
-            print_status(&status);
-            std::thread::sleep(std::time::Duration::from_secs_f64(seconds.max(0.25)));
-        },
+        Cmd::Watch { seconds } => {
+            let unit = TempUnit::of(cli);
+            loop {
+                let Response::Status { status } = call(cli, Request::Status)? else {
+                    return Err("unexpected response".into());
+                };
+                print!("\x1b[2J\x1b[H");
+                print_status(&status, unit);
+                std::thread::sleep(std::time::Duration::from_secs_f64(seconds.max(0.25)));
+            }
+        }
         Cmd::Mode { mode, rpm } => {
             call(cli, Request::SetMode { mode: mode_from(*mode, *rpm)? })?;
             println!("ok");
@@ -207,7 +291,7 @@ fn run(cli: &Cli) -> Result<(), String> {
             print!("{}", config.to_toml());
         }
         Cmd::Sensors { all } => sensors(cli, *all)?,
-        Cmd::Probe => probe()?,
+        Cmd::Probe => probe(TempUnit::of(cli))?,
         Cmd::Report => report(cli)?,
         Cmd::Keys { prefix } => keys(prefix.as_deref())?,
         Cmd::Fan { action } => fan(action)?,
@@ -244,7 +328,7 @@ fn run(cli: &Cli) -> Result<(), String> {
     Ok(())
 }
 
-fn print_status(s: &Status) {
+fn print_status(s: &Status, unit: TempUnit) {
     let mode = match &s.mode {
         Mode::Fixed { rpm } => format!("fixed {rpm:.0} rpm"),
         m => format!("{m:?}").to_lowercase(),
@@ -252,9 +336,9 @@ fn print_status(s: &Status) {
     println!("mode      {mode}  (profile {:?})", s.profile);
     println!("decision  {:?}  reason {:?}", s.decision, s.reason);
     println!(
-        "control   {:.1} °C   hotspot {:.1} °C ({})",
-        s.control_c.unwrap_or(f64::NAN),
-        s.hotspot_c.unwrap_or(f64::NAN),
+        "control   {}   hotspot {} ({})",
+        unit.show(s.control_c, 0),
+        unit.show(s.hotspot_c, 0),
         s.hotspot_key.map(|k| k.to_string()).unwrap_or_default()
     );
     for f in &s.fans {
@@ -270,7 +354,8 @@ fn print_status(s: &Status) {
         );
     }
     for g in s.groups.iter().take(6) {
-        println!("  {:<22} max {:>5.1} °C  avg {:>5.1} °C  ({} sensors)", g.group, g.max_c, g.avg_c, g.count);
+        let (max, avg) = (unit.show(Some(g.max_c), 5), unit.show(Some(g.avg_c), 5));
+        println!("  {:<22} max {max}  avg {avg}  ({} sensors)", g.group, g.count);
     }
     println!(
         "model {}  writes {}  tick {} µs  smc writes {}  uptime {:.0}s",
@@ -314,6 +399,7 @@ fn sensors(cli: &Cli, all: bool) -> Result<(), String> {
         println!("{}", serde_json::to_string_pretty(&v).unwrap());
         return Ok(());
     }
+    let unit = TempUnit::of(cli);
     let mut last = "";
     for (g, k, c) in rows {
         if g != last {
@@ -321,7 +407,7 @@ fn sensors(cli: &Cli, all: bool) -> Result<(), String> {
             last = g;
         }
         let mark = if control.contains(&k) { "*" } else { " " };
-        println!("  {mark}{k}  {:>6.1} °C", c.unwrap_or(f64::NAN));
+        println!("  {mark}{k}  {}", unit.show(c, 6));
     }
     println!("\n* = drives the controller");
     Ok(())
@@ -348,7 +434,7 @@ fn read_only_status(
     Ok((status, engine.into_hardware()))
 }
 
-fn probe() -> Result<(), String> {
+fn probe(unit: TempUnit) -> Result<(), String> {
     let (hw, machine) = assess_machine()?;
     println!(
         "{} · {} · macOS {}\nsupport: {:?}: {}",
@@ -368,7 +454,7 @@ fn probe() -> Result<(), String> {
         println!("issue: {issue}");
     }
     let (status, _) = read_only_status(hw, machine)?;
-    print_status(&status);
+    print_status(&status, unit);
     Ok(())
 }
 
@@ -545,5 +631,48 @@ fn benchmark() {
             );
         }
         println!();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn converts_and_formats_temperatures() {
+        assert_eq!(TempUnit::Celsius.show(Some(61.5), 5), " 61.5 °C");
+        assert_eq!(TempUnit::Fahrenheit.show(Some(61.5), 5), "142.7 °F");
+        assert_eq!(TempUnit::Fahrenheit.show(Some(100.0), 0), "212.0 °F");
+        assert_eq!(TempUnit::Celsius.show(None, 0), "NaN °C");
+    }
+
+    #[test]
+    fn explicit_setting_wins_over_region() {
+        let us = || Some("en_US".to_string());
+        let spain = || Some("en_US@rg=eszzzz".to_string());
+        assert_eq!(TempUnit::resolve(Some("Fahrenheit"), spain), TempUnit::Fahrenheit);
+        assert_eq!(TempUnit::resolve(Some("Celsius"), us), TempUnit::Celsius);
+        assert_eq!(TempUnit::resolve(None, us), TempUnit::Fahrenheit);
+        assert_eq!(TempUnit::resolve(None, spain), TempUnit::Celsius);
+        assert_eq!(TempUnit::resolve(None, || None), TempUnit::Celsius);
+    }
+
+    #[test]
+    fn parses_locale_regions() {
+        assert_eq!(region_of("en_US").as_deref(), Some("US"));
+        assert_eq!(region_of("en_US@rg=eszzzz").as_deref(), Some("ES"));
+        assert_eq!(region_of("en_GB@calendar=gregorian;rg=uszzzz").as_deref(), Some("US"));
+        assert_eq!(region_of("zh-Hans_CN").as_deref(), Some("CN"));
+        assert_eq!(region_of("es-419"), None);
+        assert_eq!(region_of("en"), None);
+    }
+
+    #[test]
+    fn unit_flags_override_the_system_setting() {
+        let cli = Cli::try_parse_from(["fanctl", "status", "--fahrenheit"]).unwrap();
+        assert_eq!(TempUnit::of(&cli), TempUnit::Fahrenheit);
+        let cli = Cli::try_parse_from(["fanctl", "--celsius", "sensors"]).unwrap();
+        assert_eq!(TempUnit::of(&cli), TempUnit::Celsius);
+        assert!(Cli::try_parse_from(["fanctl", "status", "--celsius", "--fahrenheit"]).is_err());
     }
 }

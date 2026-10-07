@@ -4,17 +4,19 @@ import SwiftUI
 public struct MenuBarLabel: View {
     let status: Status?
     let connection: Connection
+    let unit: TemperatureUnit
 
-    public init(status: Status?, connection: Connection) {
+    public init(status: Status?, connection: Connection, unit: TemperatureUnit) {
         self.status = status
         self.connection = connection
+        self.unit = unit
     }
 
     public var body: some View {
         HStack(spacing: 3) {
             Image(systemName: icon)
             if connection == .connected {
-                Text(Format.menuBar(status)).monospacedDigit()
+                Text(Format.menuBar(status, unit)).monospacedDigit()
             }
         }
     }

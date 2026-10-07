@@ -54,6 +54,7 @@ public struct MenuContent: View {
     }
 }
 
+@MainActor
 private struct StatusView: View {
     let model: AppModel
     let status: Status
@@ -72,16 +73,22 @@ private struct StatusView: View {
         }
     }
 
+    private var unit: TemperatureUnit { model.temperatureUnit }
+
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(Format.celsius(status.controlC))
-                .font(.system(size: 34, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(temperatureColor(status.controlC))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(headline).font(.callout)
-                Text(subline).font(.caption).foregroundStyle(.secondary)
+        HStack(alignment: .center) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(Format.temperature(status.controlC, unit))
+                    .font(.system(size: 34, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(temperatureColor(status.controlC))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(headline).font(.callout)
+                    Text(subline).font(.caption).foregroundStyle(.secondary)
+                }
             }
+            Spacer(minLength: 8)
+            ControlSwitch(model: model, status: status)
         }
     }
 
@@ -109,7 +116,7 @@ private struct StatusView: View {
     /// instantaneous peak only when it's higher, so the two never look contradictory.
     private var subline: String {
         if let peak = status.hotspotC, let control = status.controlC, peak >= control + 1 {
-            return "Chip temperature · peaking at \(Format.celsius(peak))"
+            return "Chip temperature · peaking at \(Format.temperature(peak, unit))"
         }
         return "Chip temperature"
     }
@@ -166,7 +173,7 @@ private struct StatusView: View {
                 HStack {
                     Text(g.group).font(.caption)
                     Spacer()
-                    Text("\(Format.celsius(g.avgC)) avg · \(Format.celsius(g.maxC)) max")
+                    Text("\(Format.temperature(g.avgC, unit)) avg · \(Format.temperature(g.maxC, unit)) max")
                         .font(.caption).monospacedDigit().foregroundStyle(.secondary)
                 }
             }
@@ -241,12 +248,16 @@ private struct ModePicker: View {
     }
 
     private var profileHint: String {
+        // Mirrors the built-in curves in crates/fan-core/src/config.rs.
+        let (start, full): (Double, Double)
         switch status.profile {
-        case .quiet: "Fans start around 66 °C, full speed at 92 °C."
-        case .balanced: "Fans start around 58 °C, full speed at 83 °C."
-        case .performance: "Fans start around 50 °C, full speed at 76 °C."
-        case .custom: "Custom curve from the config file."
+        case .quiet: (start, full) = (66, 92)
+        case .balanced: (start, full) = (58, 83)
+        case .performance: (start, full) = (50, 76)
+        case .custom: return "Custom curve from the config file."
         }
+        let unit = model.temperatureUnit
+        return "Fans start around \(Format.degrees(start, unit)), full speed at \(Format.degrees(full, unit))."
     }
 
     private var modeBinding: Binding<String> {
@@ -267,6 +278,41 @@ private struct ModePicker: View {
 
     private var profileBinding: Binding<Profile> {
         Binding(get: { status.profile }, set: { model.setProfile($0) })
+    }
+}
+
+/// Quick on/off for MacFanOptimizer's control. Off is the `system` mode (the
+/// picker's macOS option); on restores whichever mode was last active.
+@MainActor
+private struct ControlSwitch: View {
+    let model: AppModel
+    let status: Status
+
+    /// The daemon accepts mode changes even when it can't write to the fans,
+    /// so don't offer a switch that would do nothing.
+    private var available: Bool { status.writesEnabled && status.controlDisabled == nil }
+
+    var body: some View {
+        Toggle("Fan control", isOn: Binding(get: { status.mode != .system }, set: { model.setControlEnabled($0) }))
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .disabled(!available)
+            .help(help)
+    }
+
+    private var help: String {
+        if !available { return "Fan control isn't available on this Mac" }
+        if status.mode != .system { return "MacFanOptimizer is controlling the fans. Turn off to hand them back to macOS." }
+        return "macOS is controlling the fans. Turn on to resume \(modeName(model.lastActiveMode))."
+    }
+
+    private func modeName(_ mode: Mode) -> String {
+        switch mode {
+        case .system: "macOS"
+        case .smart: "Smart"
+        case let .fixed(rpm): "Fixed at \(Format.rpm(rpm)) rpm"
+        case .max: "Max"
+        }
     }
 }
 
