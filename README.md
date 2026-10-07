@@ -31,6 +31,8 @@ The app isn't notarized yet: on first launch, open <b>System Settings → Privac
 Quit Macs Fan Control before installing. <a href="#install">More install options</a>.
 </sub></div>
 
+<br/>
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/panel-dark.png">
