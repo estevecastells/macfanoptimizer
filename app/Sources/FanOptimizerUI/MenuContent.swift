@@ -27,22 +27,41 @@ public struct MenuContent: View {
                 Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
 
-            Divider()
-            HStack {
-                Toggle("Open at login", isOn: Binding(get: { model.openAtLogin }, set: { model.setOpenAtLogin($0) }))
-                    .toggleStyle(.checkbox)
-                    .font(.callout)
-                if model.loginItemNeedsApproval {
-                    Button("Approve…") { model.openLoginItemSettings() }
-                        .buttonStyle(.link)
-                        .font(.caption)
-                        .help("macOS needs you to allow MacFanOptimizer in Login Items")
+            if model.serviceUpdateAvailable {
+                HStack {
+                    Label("The fan service has an update", systemImage: "arrow.down.circle.fill").font(.callout)
+                    Spacer()
+                    Button(model.installing ? "Updating…" : "Update…") { model.installDaemon() }
+                        .controlSize(.small)
+                        .disabled(model.installing)
+                        .help("Installs the fan service bundled with this version. macOS asks for your password.")
                 }
             }
+            UpdateRow(updates: model.updates)
+
+            Divider()
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Toggle("Open at login", isOn: Binding(get: { model.openAtLogin }, set: { model.setOpenAtLogin($0) }))
+                        .toggleStyle(.checkbox)
+                    if model.loginItemNeedsApproval {
+                        Button("Approve…") { model.openLoginItemSettings() }
+                            .buttonStyle(.link)
+                            .font(.caption)
+                            .help("macOS needs you to allow MacFanOptimizer in Login Items")
+                    }
+                }
+                Toggle("Install updates automatically", isOn: Binding(
+                    get: { model.updates.autoInstall }, set: { model.updates.autoInstall = $0 }))
+                    .toggleStyle(.checkbox)
+            }
+            .font(.callout)
             HStack {
                 Button("Log") { model.openLog() }
                 Spacer()
-                Link("GitHub", destination: URL(string: "https://github.com/estevecastells/macfanoptimizer")!)
+                Button("Check for Updates") { Task { await model.updates.check(userInitiated: true) } }
+                Spacer()
+                Link("GitHub", destination: URL(string: "https://github.com/\(UpdateConfig.repo)")!)
                 Spacer()
                 Button("Quit") { NSApplication.shared.terminate(nil) }
             }
@@ -51,6 +70,38 @@ public struct MenuContent: View {
         }
         .padding(14)
         .frame(width: 320)
+    }
+}
+
+@MainActor
+private struct UpdateRow: View {
+    let updates: Updates
+
+    var body: some View {
+        switch updates.state {
+        case .idle:
+            EmptyView()
+        case .checking:
+            Label("Checking for updates…", systemImage: "arrow.triangle.2.circlepath").font(.caption).foregroundStyle(.secondary)
+        case .upToDate:
+            Label("MacFanOptimizer \(Updates.currentVersion) is up to date", systemImage: "checkmark.circle")
+                .font(.caption).foregroundStyle(.secondary)
+        case let .available(version, notes):
+            HStack {
+                Label("Version \(version) is available", systemImage: "arrow.down.circle.fill").font(.callout)
+                Spacer()
+                Link("What's new", destination: notes).font(.caption)
+                Button("Update") { Task { await updates.install() } }.controlSize(.small)
+            }
+        case let .installing(step):
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(step).font(.caption).foregroundStyle(.secondary)
+            }
+        case let .failed(message):
+            Label(message, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

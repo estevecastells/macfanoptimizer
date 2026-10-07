@@ -33,8 +33,13 @@ jobs:
           cargo test --locked
           (cd app && swift run -c debug KitChecks)
 
-      - name: Package
-        run: scripts/package-release.sh
+      - name: Package and sign
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          scripts/package-release.sh
+          # The in-app updater refuses unsigned releases, so never publish one.
+          test -s dist/SHA256SUMS.sig
 
       - name: Smoke-test the packaged CLI
         run: |
@@ -53,6 +58,7 @@ jobs:
             dist/MacFanOptimizer-macos-arm64.zip \
             dist/macfanoptimizer-macos-arm64.tar.gz \
             dist/SHA256SUMS \
+            dist/SHA256SUMS.sig \
             --title "MacFanOptimizer $TAG" \
             --notes-file dist/RELEASE_NOTES.md \
             --generate-notes \

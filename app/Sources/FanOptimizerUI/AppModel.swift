@@ -28,6 +28,10 @@ public final class AppModel {
     /// The mode the on/off switch restores. Persisted so it survives relaunches.
     private(set) var lastActiveMode: Mode = AppModel.loadLastActiveMode()
 
+    public let updates = Updates()
+    /// The fan service bundled with this app is newer than the running one (after an app update).
+    private(set) var serviceUpdateAvailable = false
+    private var serviceChecked = false
     private let client = DaemonClient()
     private var pollTask: Task<Void, Never>?
 
@@ -37,6 +41,7 @@ public final class AppModel {
     public init() {
         configureLoginItemOnFirstLaunch()
         start()
+        updates.start()
     }
 
     /// A static model for previews and README screenshots: no daemon, no polling.
@@ -106,6 +111,7 @@ public final class AppModel {
             connection = .connected
             // Also catches changes made with fanctl.
             rememberActiveMode(status.mode)
+            await checkServiceVersion()
         } catch DaemonError.notRunning {
             status = nil
             connection = .missing
@@ -159,6 +165,21 @@ public final class AppModel {
         }
     }
 
+    /// After the app updates itself, the fan service it bundles is newer than the
+    /// one running. Updating it needs the administrator password, so ask right
+    /// away only if the person started the update; otherwise offer a button.
+    private func checkServiceVersion() async {
+        guard !serviceChecked, !installing else { return }
+        serviceChecked = true
+        let prompt = UserDefaults.standard.bool(forKey: Updates.promptServiceUpdateKey)
+        UserDefaults.standard.removeObject(forKey: Updates.promptServiceUpdateKey)
+        guard case let .pong(running, _)? = try? await client.send(.ping), let runningVersion = Version(running),
+            runningVersion < Updates.currentVersion
+        else { return }
+        serviceUpdateAvailable = true
+        if prompt { installDaemon() }
+    }
+
     /// Install (or reinstall) the daemon from the app bundle, asking for an
     /// administrator password through the standard macOS prompt.
     func installDaemon() {
@@ -179,6 +200,7 @@ public final class AppModel {
             await MainActor.run {
                 self.installing = false
                 self.actionError = message
+                if message == nil { self.serviceUpdateAvailable = false }
             }
             try? await Task.sleep(for: .seconds(1))
             await self.refresh()

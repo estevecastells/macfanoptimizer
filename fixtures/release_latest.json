@@ -1,0 +1,12 @@
+{
+  "tag_name": "v0.2.0",
+  "html_url": "https://github.com/estevecastells/macfanoptimizer/releases/tag/v0.2.0",
+  "draft": false,
+  "prerelease": false,
+  "body": "Notes",
+  "assets": [
+    {"name": "MacFanOptimizer-macos-arm64.zip", "browser_download_url": "https://github.com/estevecastells/macfanoptimizer/releases/download/v0.2.0/MacFanOptimizer-macos-arm64.zip", "size": 1},
+    {"name": "SHA256SUMS", "browser_download_url": "https://github.com/estevecastells/macfanoptimizer/releases/download/v0.2.0/SHA256SUMS", "size": 1},
+    {"name": "SHA256SUMS.sig", "browser_download_url": "https://github.com/estevecastells/macfanoptimizer/releases/download/v0.2.0/SHA256SUMS.sig", "size": 1}
+  ]
+}

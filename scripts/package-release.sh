@@ -3,6 +3,7 @@
 #   MacFanOptimizer-macos-arm64.zip     menu bar app (bundles the daemon + installer)
 #   macfanoptimizer-macos-arm64.tar.gz  fand, fanctl, install/uninstall scripts
 #   SHA256SUMS
+#   SHA256SUMS.sig                      Ed25519 signature the in-app updater checks (needs $UPDATE_SIGNING_KEY)
 #   RELEASE_NOTES.md                    install instructions prepended to the release notes
 #
 # Asset names carry no version so that .../releases/latest/download/<name> always works.
@@ -27,6 +28,11 @@ ditto -c -k --sequesterRsrc --keepParent build/MacFanOptimizer.app dist/MacFanOp
 rm -rf dist/stage
 
 (cd dist && shasum -a 256 MacFanOptimizer-macos-arm64.zip macfanoptimizer-macos-arm64.tar.gz > SHA256SUMS)
+if [[ -n "${UPDATE_SIGNING_KEY:-}" ]]; then
+  swift scripts/sign-update.swift dist/SHA256SUMS > dist/SHA256SUMS.sig
+else
+  echo "warning: UPDATE_SIGNING_KEY not set; release won't be installable by the in-app updater" >&2
+fi
 
 cat > dist/RELEASE_NOTES.md <<EOF
 ## Install
