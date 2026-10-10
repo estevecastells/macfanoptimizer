@@ -15,8 +15,23 @@ public enum Connection: Equatable {
 @MainActor
 @Observable
 public final class AppModel {
+    /// The latest status for the panel. Only updated while the panel is open:
+    /// every poll changes its counters, and nothing else needs it.
     public private(set) var status: Status?
     public private(set) var connection: Connection = .connecting
+    /// What the menu bar shows; reassigned only when it changes.
+    public private(set) var menuBar = MenuBarReading.disconnected
+    /// Newest status from the daemon, open or not; published to `status` when the panel opens.
+    @ObservationIgnored private var latest: Status?
+    /// Whether the panel is on screen; set by `MenuContent`. Opening it publishes
+    /// the latest status and, unless this is a static preview, polls straight away.
+    @ObservationIgnored var panelVisible = false {
+        didSet {
+            guard panelVisible != oldValue, panelVisible else { return }
+            publishStatus()
+            if pollTask != nil { start() }
+        }
+    }
     private(set) var actionError: String?
     private(set) var installing = false
     /// Mirrors the login item state; set through `setOpenAtLogin`.
@@ -35,8 +50,12 @@ public final class AppModel {
     private let client = DaemonClient()
     private var pollTask: Task<Void, Never>?
 
-    /// Polling period. A status call is a single local socket round-trip.
-    static let pollInterval: Duration = .seconds(2)
+    /// Polling period. A status call is a single local socket round-trip, but each
+    /// one wakes the app and the daemon, so poll fast only while the panel is open.
+    /// Closed, the menu bar reading still refreshes every 5 s.
+    static func pollInterval(panelVisible: Bool) -> Duration {
+        panelVisible ? .seconds(2) : .seconds(5)
+    }
 
     public init() {
         configureLoginItemOnFirstLaunch()
@@ -48,8 +67,10 @@ public final class AppModel {
     /// Celsius by default so screenshots don't depend on the machine's settings.
     public init(previewStatus: Status, temperatureUnit: TemperatureUnit = .celsius) {
         status = previewStatus
+        latest = previewStatus
         self.temperatureUnit = temperatureUnit
         connection = .connected
+        menuBar = MenuBarReading(status: previewStatus, connected: true, unit: temperatureUnit)
         openAtLogin = true
     }
 
@@ -97,27 +118,41 @@ public final class AppModel {
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
-                try? await Task.sleep(for: AppModel.pollInterval)
+                try? await Task.sleep(for: AppModel.pollInterval(panelVisible: self?.panelVisible ?? false))
             }
         }
     }
 
+    // Observation notifies on every assignment, even of an equal value, so the
+    // setters below assign only on change to keep closed views from re-rendering.
     func refresh() async {
         let unit = TemperatureUnit.preferred()
         if unit != temperatureUnit { temperatureUnit = unit }
         do {
             let status = try await client.status()
-            self.status = status
-            connection = .connected
+            latest = status
+            setConnection(.connected)
             // Also catches changes made with fanctl.
             rememberActiveMode(status.mode)
             await checkServiceVersion()
         } catch DaemonError.notRunning {
-            status = nil
-            connection = .missing
+            latest = nil
+            setConnection(.missing)
         } catch {
-            connection = .failed(error.localizedDescription)
+            setConnection(.failed(error.localizedDescription))
         }
+        publishStatus()
+    }
+
+    private func setConnection(_ new: Connection) {
+        if connection != new { connection = new }
+    }
+
+    /// Update the menu bar reading, and the panel's status while it's open.
+    private func publishStatus() {
+        if panelVisible, status != latest { status = latest }
+        let reading = MenuBarReading(status: latest, connected: connection == .connected, unit: temperatureUnit)
+        if reading != menuBar { menuBar = reading }
     }
 
     func setMode(_ mode: Mode) {

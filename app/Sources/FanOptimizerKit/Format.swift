@@ -65,3 +65,32 @@ public enum Format {
         return "\(temperature(s.controlC, unit)) \(rpm(fan))"
     }
 }
+
+/// Everything the menu bar shows: an SF Symbol and, when connected, the compact
+/// reading. Equatable so the app redraws the status item only when what's on
+/// screen changes, not on every poll (a status always differs in its counters).
+public struct MenuBarReading: Equatable, Sendable {
+    public let icon: String
+    public let text: String?
+
+    public static let disconnected = MenuBarReading(icon: "fan.slash", text: nil)
+
+    public init(icon: String, text: String?) {
+        self.icon = icon
+        self.text = text
+    }
+
+    public init(status: Status?, connected: Bool, unit: TemperatureUnit) {
+        guard connected else {
+            self = .disconnected
+            return
+        }
+        text = Format.menuBar(status, unit)
+        switch status?.reason {
+        case nil: icon = "fan.slash"
+        case .critical?, .protecting?: icon = "flame"
+        case .sensorFailure?: icon = "exclamationmark.triangle"
+        default: icon = "fan"
+        }
+    }
+}

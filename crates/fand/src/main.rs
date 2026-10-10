@@ -150,9 +150,23 @@ fn main() {
     let _guard = ReleaseGuard(shared.clone());
 
     let term = Arc::new(AtomicBool::new(false));
-    for sig in [signal_hook::consts::SIGTERM, signal_hook::consts::SIGINT, signal_hook::consts::SIGHUP] {
+    let signals = [signal_hook::consts::SIGTERM, signal_hook::consts::SIGINT, signal_hook::consts::SIGHUP];
+    for sig in signals {
         signal_hook::flag::register(sig, term.clone()).expect("register signal handler");
     }
+    // Also wake the control loop on a signal, so it can sleep a whole interval
+    // instead of waking every 0.5 s to look at the flag.
+    let mut wake = signal_hook::iterator::Signals::new(signals).expect("register signal handler");
+    let (wake_term, wake_shared) = (term.clone(), shared.clone());
+    std::thread::Builder::new()
+        .name("signals".into())
+        .spawn(move || {
+            for _ in wake.forever() {
+                wake_term.store(true, Ordering::Relaxed);
+                wake_shared.kick();
+            }
+        })
+        .expect("spawn signal thread");
 
     if let Err(e) = server::spawn(shared.clone(), &args.socket) {
         die(&format!("cannot listen on {}: {e}", args.socket.display()));
@@ -195,15 +209,15 @@ fn main() {
             Duration::from_millis(engine.config().poll_interval_ms)
         };
         ticks += 1;
-        // Sleep in short slices so SIGTERM is handled promptly.
+        // Sleep until the next tick. A config change or a signal (SIGTERM) kicks it early.
         let deadline = now_s() + poll.as_secs_f64();
         while !term.load(Ordering::Relaxed) {
             let left = deadline - now_s();
             if left <= 0.0 {
                 break;
             }
-            if shared.wait(Duration::from_secs_f64(left.min(0.5))) {
-                break; // config changed: apply it now
+            if shared.wait(Duration::from_secs_f64(left)) {
+                break; // config changed or shutting down: act now
             }
         }
     }

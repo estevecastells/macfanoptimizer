@@ -70,6 +70,52 @@ public struct MenuContent: View {
         }
         .padding(14)
         .frame(width: 320)
+        // MenuBarExtra keeps this window while the panel is closed. Both signals
+        // are used so polling speeds up on open even if one of them is missed.
+        .onAppear { model.panelVisible = true }
+        .onDisappear { model.panelVisible = false }
+        .background(WindowVisibility { model.panelVisible = $0 })
+    }
+}
+
+/// Reports whether the hosting window is on screen, from its occlusion state.
+private struct WindowVisibility: NSViewRepresentable {
+    let onChange: @MainActor (Bool) -> Void
+
+    func makeNSView(context: Context) -> VisibilityView {
+        VisibilityView(onChange: onChange)
+    }
+
+    func updateNSView(_ view: VisibilityView, context: Context) {
+        view.onChange = onChange
+    }
+
+    final class VisibilityView: NSView {
+        var onChange: @MainActor (Bool) -> Void
+        private var observer: NSObjectProtocol?
+
+        init(onChange: @escaping @MainActor (Bool) -> Void) {
+            self.onChange = onChange
+            super.init(frame: .zero)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            observer = window.map {
+                NotificationCenter.default.addObserver(
+                    forName: NSWindow.didChangeOcclusionStateNotification, object: $0, queue: .main
+                ) { [weak self] _ in MainActor.assumeIsolated { self?.report() } }
+            }
+            report()
+        }
+
+        private func report() {
+            onChange(window?.occlusionState.contains(.visible) == true)
+        }
     }
 }
 

@@ -94,6 +94,45 @@ check(try {
     return Format.menuBar(s, .celsius) == "62° 5990" && Format.menuBar(s, .fahrenheit) == "143° 5990"
 }(), "menu bar text in both units")
 
+// Menu bar reading: the app redraws the status item only when this changes.
+func statusVariant(_ edits: [(String, String)]) throws -> Status {
+    var json = statusJSON
+    for (from, to) in edits { json = json.replacingOccurrences(of: from, with: to) }
+    guard case let .status(s) = try decode(Response.self, json) else { throw DaemonError.badResponse("not a status") }
+    return s
+}
+check(try {
+    let base = try statusVariant([])
+    let reading = MenuBarReading(status: base, connected: true, unit: .celsius)
+    return reading == MenuBarReading(icon: "fan", text: "62° 5990")
+}(), "menu bar reading for a normal status")
+check(try {
+    // Counters move on every poll; the menu bar must not.
+    let later = try statusVariant([(#""ticks": 12"#, #""ticks": 13"#), (#""uptime_s": 24.0"#, #""uptime_s": 26.0"#),
+                                   (#""tick_us": 2100"#, #""tick_us": 1900"#), (#""control_c": 61.5"#, #""control_c": 61.7"#)])
+    let base = try statusVariant([])
+    return later != base
+        && MenuBarReading(status: later, connected: true, unit: .celsius) == MenuBarReading(status: base, connected: true, unit: .celsius)
+}(), "menu bar reading ignores counters and sub-degree changes")
+check(try {
+    let warmer = try statusVariant([(#""control_c": 61.5"#, #""control_c": 62.6"#)])
+    return MenuBarReading(status: warmer, connected: true, unit: .celsius).text == "63° 5990"
+}(), "menu bar reading follows a displayed temperature change")
+check(try {
+    let hot = try statusVariant([(#""reason": "normal""#, #""reason": "critical""#)])
+    let failing = try statusVariant([(#""reason": "normal""#, #""reason": "sensor_failure""#)])
+    let protecting = try statusVariant([(#""reason": "normal""#, #""reason": "protecting""#)])
+    return MenuBarReading(status: hot, connected: true, unit: .celsius).icon == "flame"
+        && MenuBarReading(status: protecting, connected: true, unit: .celsius).icon == "flame"
+        && MenuBarReading(status: failing, connected: true, unit: .celsius).icon == "exclamationmark.triangle"
+}(), "menu bar icon follows the reason")
+check(try {
+    let base = try statusVariant([])
+    return MenuBarReading(status: base, connected: false, unit: .celsius) == .disconnected
+        && MenuBarReading(status: nil, connected: false, unit: .celsius).text == nil
+        && MenuBarReading(status: nil, connected: true, unit: .celsius) == MenuBarReading(icon: "fan.slash", text: "–")
+}(), "menu bar reading without a connection or status")
+
 // Temperature unit preference: the explicit setting wins over the region's convention.
 check(TemperatureUnit.resolve(setting: "Fahrenheit", region: "ES") == .fahrenheit, "Fahrenheit setting")
 check(TemperatureUnit.resolve(setting: "Celsius", region: "US") == .celsius, "Celsius setting overrides US region")
