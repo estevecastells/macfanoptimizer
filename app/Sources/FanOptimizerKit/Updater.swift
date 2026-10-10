@@ -12,8 +12,13 @@ import Foundation
 public enum UpdateConfig {
     public static let repo = "estevecastells/macfanoptimizer"
     public static let appAsset = "MacFanOptimizer-macos-arm64.zip"
-    /// Base64 raw Ed25519 public key matching the `UPDATE_SIGNING_KEY` repository secret.
-    public static let publicKey = "V2nFnwi7j+AqQ78N//Ov3m6M4YvIIqG04cAY1i1iWqI="
+    /// Base64 raw Ed25519 public keys a release may be signed with. The first matches the
+    /// `UPDATE_SIGNING_KEY` repository secret; the second is the key it replaced, kept so the
+    /// release that introduced the new key could still be signed with the old one.
+    public static let publicKeys = [
+        "t+w4uDzt9L8nl3UrTEq5EApiWXlTm7ua66SS1uBdbxs=",
+        "V2nFnwi7j+AqQ78N//Ov3m6M4YvIIqG04cAY1i1iWqI=",
+    ]
     /// `MACFANOPTIMIZER_UPDATE_FEED` points at a different release JSON (a file:// URL works), for testing.
     public static var feedURL: URL {
         if let s = ProcessInfo.processInfo.environment["MACFANOPTIMIZER_UPDATE_FEED"], let u = URL(string: s) { return u }
@@ -86,17 +91,25 @@ public enum UpdateError: Error, LocalizedError, Equatable {
 }
 
 public struct ReleaseVerifier: Sendable {
-    let key: Curve25519.Signing.PublicKey
+    let keys: [Curve25519.Signing.PublicKey]
 
     public init(publicKeyBase64: String) throws {
-        guard let raw = Data(base64Encoded: publicKeyBase64) else { throw UpdateError.badSignature }
-        key = try Curve25519.Signing.PublicKey(rawRepresentation: raw)
+        try self.init(publicKeysBase64: [publicKeyBase64])
+    }
+
+    /// A signature from any of these keys is accepted.
+    public init(publicKeysBase64: [String]) throws {
+        keys = try publicKeysBase64.map { b64 in
+            guard let raw = Data(base64Encoded: b64) else { throw UpdateError.badSignature }
+            return try Curve25519.Signing.PublicKey(rawRepresentation: raw)
+        }
+        if keys.isEmpty { throw UpdateError.badSignature }
     }
 
     /// Check `SHA256SUMS` against its base64 signature file, then return its entries (file name → hex digest).
     public func verifiedSums(sums: Data, signature: Data) throws -> [String: String] {
         let text = String(decoding: signature, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let sig = Data(base64Encoded: text), key.isValidSignature(sig, for: sums) else {
+        guard let sig = Data(base64Encoded: text), keys.contains(where: { $0.isValidSignature(sig, for: sums) }) else {
             throw UpdateError.badSignature
         }
         return Self.parseSums(String(decoding: sums, as: UTF8.self))

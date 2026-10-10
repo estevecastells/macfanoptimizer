@@ -113,7 +113,7 @@ public final class Updates {
         let zip = try await fetch(UpdateConfig.appAsset)
 
         progress("Verifying…")
-        let verifier = try ReleaseVerifier(publicKeyBase64: UpdateConfig.publicKey)
+        let verifier = try ReleaseVerifier(publicKeysBase64: UpdateConfig.publicKeys)
         let entries = try verifier.verifiedSums(sums: Data(contentsOf: sums), signature: Data(contentsOf: sig))
         try ReleaseVerifier.check(zip, named: UpdateConfig.appAsset, in: entries)
 

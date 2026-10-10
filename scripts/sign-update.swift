@@ -4,7 +4,8 @@
 //   UPDATE_SIGNING_KEY=<private> sign-update.swift dist/SHA256SUMS > dist/SHA256SUMS.sig
 //
 // The private key lives only in the UPDATE_SIGNING_KEY repository secret (and your
-// own backup). The public key is embedded in the app (UpdateConfig.publicKey).
+// own backup). The public key is embedded in the app (UpdateConfig.publicKeys).
+// To rotate keys, see docs/RELEASING.md.
 
 import CryptoKit
 import Foundation

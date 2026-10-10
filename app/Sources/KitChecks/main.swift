@@ -149,7 +149,7 @@ check(try {
     let r = try Release.decode(Data(fixture("release_latest.json").utf8))
     return r.version == Version("0.2.0") && !r.draft && r.asset(UpdateConfig.appAsset) != nil && r.asset("nope") == nil
 }(), "decodes a GitHub release")
-check((try? ReleaseVerifier(publicKeyBase64: UpdateConfig.publicKey)) != nil, "embedded public key is valid")
+check(UpdateConfig.publicKeys.count == 2 && (try? ReleaseVerifier(publicKeysBase64: UpdateConfig.publicKeys)) != nil, "embedded public keys are valid")
 
 let testKey = Curve25519.Signing.PrivateKey()
 let payload = Data("abc123  MacFanOptimizer-macos-arm64.zip\ndef456  other.tar.gz\n".utf8)
@@ -160,6 +160,13 @@ check(try verifier.verifiedSums(sums: payload, signature: goodSig)["MacFanOptimi
 check((try? verifier.verifiedSums(sums: payload + Data("x".utf8), signature: goodSig)) == nil, "tampered sums rejected")
 let otherSig = Data(try! Curve25519.Signing.PrivateKey().signature(for: payload).base64EncodedString().utf8)
 check((try? verifier.verifiedSums(sums: payload, signature: otherSig)) == nil, "signature from another key rejected")
+let rotated = try! ReleaseVerifier(publicKeysBase64: [
+    Curve25519.Signing.PrivateKey().publicKey.rawRepresentation.base64EncodedString(),
+    testKey.publicKey.rawRepresentation.base64EncodedString(),
+])
+check((try? rotated.verifiedSums(sums: payload, signature: goodSig)) != nil, "signature from any listed key accepted")
+check((try? rotated.verifiedSums(sums: payload, signature: otherSig)) == nil, "signature from an unlisted key rejected")
+check((try? ReleaseVerifier(publicKeysBase64: [])) == nil, "an empty key list is refused")
 
 let tmpFile = FileManager.default.temporaryDirectory.appendingPathComponent("kitchecks-\(getpid()).bin")
 try! Data("hello".utf8).write(to: tmpFile)
