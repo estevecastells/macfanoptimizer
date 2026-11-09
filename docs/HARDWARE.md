@@ -16,14 +16,14 @@ The daemon assesses each Mac at startup (`fand::assess`) from what the SMC expos
 
 ## Chip generation notes
 
-Our own measurements cover only the M5 Pro below. The rest comes from other open-source fan tools and is **unverified here**; reports welcome.
+Our own measurements cover the M5 Pro below; the M4 and M5 Max rows are confirmed by user reports (sections further down). The rest comes from other open-source fan tools and is **unverified here**; reports welcome.
 
 | Generation | Mode key | `Ftst` unlock | Die sensor prefixes |
 |---|---|---|---|
 | M1, M2 | `F<n>md` | Present on recent macOS; must be 1 before forced mode sticks | `Tp` (P-cores), `Te` (E-cores), `Tg` (GPU) |
 | M3 | `F<n>md` | Present | `Te`, `Tf` (P-cores and GPU) |
-| M4 | `F<n>md` | Present | `Tp`, `Te`, `Tg` |
-| M5 (Pro) | `F<n>md` | **Absent** | `Tm`, `Ts`, `Tp`, `Tg` (measured below) |
+| M4 | `F<n>Md` on Mac16,1 (reported) | Present | `Tp`, `Te`, `Tg` |
+| M5 (Pro, Max) | `F<n>md` | **Absent** | `Tm`, `Ts`, `Tp`, `Tg`, `Tf` (measured below) |
 
 The daemon handles both `F<n>md` and `F<n>Md`, writes `Ftst=1` before forcing a fan (and `0` after releasing the last one) whenever the key exists, and keeps re-asserting forced mode each tick if the OS takes it back, until verification passes or times out.
 
@@ -71,6 +71,23 @@ Measured reference points:
 ### Cost
 
 Each SMC read takes about 135 µs wall time and about 13 µs CPU on this machine, because Apple Silicon routes SMC requests through a firmware mailbox. A full scan of 118 sensors takes about 16 ms, and a hot-set tick about 3 ms.
+
+## Mac17,7 (M5 Max MacBook Pro 14"), macOS 26
+
+From a user report ([#10](https://github.com/estevecastells/macfanoptimizer/issues/10)), MacFanOptimizer 0.4.2, macOS 26.7.1.
+
+- Two fans, 2317–7826 rpm, mode key `F<n>md`, no `Ftst`: the same fan interface as the M5 Pro.
+- 322 temperature keys, 182 used for control. The hottest sensors under load are in the `Tf` family (CPU/GPU).
+- Both fans verified at runtime, held their targets within a few rpm, and reached max during a 90-minute local LLM session. At that load the Balanced curve sits at 100 %; the Quiet profile trades a hotter chip for less noise.
+
+## Mac16,1 (M4 MacBook Pro 14"), macOS 15
+
+From a user report ([#6](https://github.com/estevecastells/macfanoptimizer/issues/6)), MacFanOptimizer 0.4.0, macOS 15.7.4.
+
+- **One fan** (`FNum = 1`, no `F1*` keys), 2317–6550 rpm. The Pro and Max 14" M4 models (Mac16,6, Mac16,8) have two.
+- Mode key is uppercase `F0Md`, and `Ftst` is present.
+- Under an 8-thread load test the control temperature rose from 56.6 to 65.2 °C and the fan tracked its target within a few rpm.
+- While the fan is spun down at 0 rpm, the SMC can refuse the mode write with `0x82` for a few seconds, apparently while thermalmonitord still owns the fan. It resolves on a later tick, usually within 5–30 s, inside `VERIFY_TIMEOUT_S`. `fanctl status` shows it as "waiting for macOS to hand over control, retrying".
 
 ## Validating a new model
 

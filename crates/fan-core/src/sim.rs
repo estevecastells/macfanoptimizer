@@ -95,6 +95,9 @@ pub struct SimHardware {
     pub ignore_writes: bool,
     /// The OS takes forced mode back every second (failed `Ftst` unlock).
     pub reclaim_forced: bool,
+    /// The SMC refuses forced-mode writes, as it does with 0x82 on M1–M4 while
+    /// thermalmonitord still owns a fan that has spun down.
+    pub reject_writes: bool,
 }
 
 impl Default for SimHardware {
@@ -120,6 +123,7 @@ impl SimHardware {
             reads: 0,
             ignore_writes: false,
             reclaim_forced: false,
+            reject_writes: false,
         }
     }
 
@@ -224,6 +228,9 @@ impl Hardware for SimHardware {
 
     fn set_target(&mut self, index: u8, rpm: f64) -> Result<(), String> {
         let i = index as usize;
+        if self.reject_writes {
+            return Err(format!("SMC returned 0x82 for F{i}md"));
+        }
         self.forced[i] = true;
         self.target[i] = rpm;
         self.writes += 1;

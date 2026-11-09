@@ -115,6 +115,8 @@ MacFanOptimizer works out what to do from what your Mac's SMC exposes, not from 
 | Mac | Status |
 |---|---|
 | MacBook Pro, M5 Pro (`Mac17,9`) | ✅ **Validated**: tested end to end |
+| MacBook Pro 14", M5 Max (`Mac17,7`) | ✅ **Validated**: user report ([#10](https://github.com/estevecastells/macfanoptimizer/issues/10)) |
+| MacBook Pro 14", M4 (`Mac16,1`, one fan) | ✅ **Validated**: user report ([#6](https://github.com/estevecastells/macfanoptimizer/issues/6)) |
 | Other Apple Silicon Macs with fans: MacBook Pro (M1–M5), Mac mini, Mac Studio, iMac, Mac Pro | 🟡 **Compatible**: fan control on, verified at runtime |
 | MacBook Air (fanless) | 👀 **Monitoring only**: temperatures, nothing to control |
 | Intel Macs | ❌ Not supported |

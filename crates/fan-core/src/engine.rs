@@ -267,7 +267,18 @@ impl<H: Hardware> Engine<H> {
                             }
                             Err(e) => {
                                 self.applied[i] = Applied::Unknown;
-                                Err(e)
+                                // Before a fan has obeyed us once, a refused write usually means
+                                // macOS hasn't handed it over yet (0x82 on M1–M4 while the fan is
+                                // spun down). It's retried next tick, so say that instead of
+                                // showing a bare SMC error.
+                                if matches!(self.verify[i], Verify::Passed) {
+                                    Err(e)
+                                } else {
+                                    Err(format!(
+                                        "fan {}: waiting for macOS to hand over control, retrying ({e})",
+                                        info.index
+                                    ))
+                                }
                             }
                         }
                     } else {
@@ -464,6 +475,20 @@ mod tests {
         e.hardware_mut().reclaim_forced = false;
         run(&mut e, 10, 25);
         assert_eq!(e.control_disabled(), None);
+        assert!(e.status().fans.iter().all(|f| f.verified == Some(true)));
+    }
+
+    #[test]
+    fn refused_writes_during_handover_are_reported_as_retrying() {
+        let mut e = Engine::new(hot(SimHardware::new()), Config::default()).unwrap();
+        e.hardware_mut().reject_writes = true;
+        run(&mut e, 0, 5);
+        let err = e.status().last_error.clone().expect("a refused write is still reported");
+        assert!(err.contains("waiting for macOS to hand over control"), "got: {err}");
+        assert!(err.contains("0x82"), "keeps the SMC detail, got: {err}");
+        e.hardware_mut().reject_writes = false;
+        run(&mut e, 5, 20);
+        assert_eq!(e.status().last_error, None);
         assert!(e.status().fans.iter().all(|f| f.verified == Some(true)));
     }
 
