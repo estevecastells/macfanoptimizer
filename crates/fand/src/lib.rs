@@ -17,7 +17,11 @@ pub const DEFAULT_CONFIG_PATH: &str = "/Library/Application Support/MacFanOptimi
 /// the standard fan keys are "compatible": control is enabled and guarded by
 /// runtime verification (see `fan_core::engine::VERIFY_TIMEOUT_S`).
 /// Add a model here only with a test report (see docs/HARDWARE.md).
-pub const VALIDATED_MODELS: &[(&str, &str)] = &[("Mac17,9", "MacBook Pro (M5 Pro)")];
+pub const VALIDATED_MODELS: &[(&str, &str)] = &[
+    ("Mac16,1", "MacBook Pro 14\" (M4)"),
+    ("Mac17,7", "MacBook Pro 14\" (M5 Max)"),
+    ("Mac17,9", "MacBook Pro (M5 Pro)"),
+];
 
 /// Minimum number of recognized die sensors before we trust the readings
 /// enough to drive the fans.
